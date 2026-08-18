@@ -16,26 +16,226 @@
         display: block;
         cursor: crosshair;
       }
+
+      /* Control panel */
+      #panel {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 10;
+        width: 220px;
+        padding: 12px;
+        border-radius: 8px;
+        background: rgba(19, 23, 34, 0.92);
+        border: 1px solid #2a2e39;
+        color: #d1d4dc;
+        font: 12px -apple-system, system-ui, sans-serif;
+        user-select: none;
+        transition: padding 0.15s ease;
+      }
+      #panel.collapsed {
+        width: auto;
+        padding: 6px 10px;
+      }
+      #toggle {
+        all: unset;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #9aa4b2;
+      }
+      #toggle:hover {
+        color: #d1d4dc;
+      }
+      #chevron {
+        transition: transform 0.15s ease;
+      }
+      #panel.collapsed #chevron {
+        transform: rotate(-90deg);
+      }
+      #list {
+        margin-top: 8px;
+      }
+      #panel.collapsed #list {
+        display: none;
+      }
+      #panel label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        cursor: pointer;
+      }
+      #panel input[type="checkbox"] {
+        accent-color: #2962ff;
+        margin: 0;
+      }
+      .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        flex: none;
+      }
+      .name {
+        flex: 1;
+      }
+      .value {
+        font-variant-numeric: tabular-nums;
+        color: #9aa4b2;
+      }
+      #hint {
+        position: fixed;
+        bottom: 10px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: #5d6570;
+        font: 11px -apple-system, system-ui, sans-serif;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
     <canvas id="chart"></canvas>
+    <div id="panel">
+      <button id="toggle" type="button" title="Toggle indicators">
+        <span id="chevron">▾</span> Indicators
+      </button>
+      <div id="list"></div>
+    </div>
+    <div id="hint">Wheel: zoom · Drag: pan · Hover: crosshair</div>
+
     <script type="importmap">
       {
         "imports": {
           "@kamvachart/chart-core": "../../packages/chart-core/dist/index.js",
-          "@kamvachart/renderer-canvas": "../../packages/renderer-canvas/dist/index.js"
+          "@kamvachart/renderer-canvas": "../../packages/renderer-canvas/dist/index.js",
+          "@kamvachart/indicators": "../../packages/indicators/dist/index.js"
         }
       }
     </script>
     <script type="module">
       import { createChart } from "@kamvachart/renderer-canvas";
+      import {
+        indicatorColors,
+        sma,
+        ema,
+        bollingerBands,
+        vwap,
+        rsi,
+        macd,
+        computeSMA,
+        computeEMA,
+        computeBollinger,
+        computeVWAP,
+        computeRSI,
+        computeMACD,
+      } from "@kamvachart/indicators";
       import { generateCandles, tickCandle, nextCandle } from "./mock-data.js";
 
       const chart = createChart(document.getElementById("chart"));
       chart.setData(generateCandles(5000));
 
-      // Simulated live feed: tick the last candle, roll a new one every 3s.
+      // ---- collapsible panel ----------------------------------------------
+
+      const panel = document.getElementById("panel");
+      document.getElementById("toggle").addEventListener("click", () => {
+        panel.classList.toggle("collapsed");
+      });
+
+      // ---- indicators ------------------------------------------------------
+
+      const lastDefined = (values) => {
+        for (let i = values.length - 1; i >= 0; i--) {
+          if (values[i] !== undefined) return values[i];
+        }
+        return undefined;
+      };
+      const fmt = (v) =>
+        v === undefined ? "—" : Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(2);
+
+      const indicators = [
+        {
+          label: "SMA 20",
+          color: indicatorColors.teal,
+          name: "sma(20)",
+          defaultOn: true,
+          make: () => sma({ period: 20 }),
+          latest: (data) => lastDefined(computeSMA(data, 20)),
+        },
+        {
+          label: "EMA 50",
+          color: indicatorColors.blue,
+          name: "ema(50)",
+          make: () => ema({ period: 50 }),
+          latest: (data) => lastDefined(computeEMA(data, 50)),
+        },
+        {
+          label: "Bollinger 20, 2",
+          color: indicatorColors.orange,
+          name: "bollinger(20, 2)",
+          defaultOn: true,
+          make: () => bollingerBands({ period: 20, multiplier: 2 }),
+          latest: (data) => lastDefined(computeBollinger(data, 20, 2).middle),
+        },
+        {
+          label: "VWAP",
+          color: indicatorColors.gray,
+          name: "vwap",
+          make: () => vwap(),
+          latest: (data) => lastDefined(computeVWAP(data)),
+        },
+        {
+          label: "RSI 14",
+          color: indicatorColors.purple,
+          name: "rsi(14)",
+          make: () => rsi({ period: 14 }),
+          latest: (data) => lastDefined(computeRSI(data, 14)),
+        },
+        {
+          label: "MACD 12, 26, 9",
+          color: indicatorColors.blue,
+          name: "macd(12, 26, 9)",
+          make: () => macd({ fast: 12, slow: 26, signal: 9 }),
+          latest: (data) => lastDefined(computeMACD(data, 12, 26, 9).macd),
+        },
+      ];
+
+      const list = document.getElementById("list");
+      for (const ind of indicators) {
+        const row = document.createElement("label");
+        row.innerHTML =
+          `<input type="checkbox" ${ind.defaultOn ? "checked" : ""}/>` +
+          `<span class="swatch" style="background:${ind.color}"></span>` +
+          `<span class="name">${ind.label}</span>` +
+          `<span class="value" id="value-${ind.label}">—</span>`;
+
+        const checkbox = row.querySelector("input");
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) chart.use(ind.make());
+          else chart.removePlugin(ind.name);
+        });
+        list.appendChild(row);
+
+        if (ind.defaultOn) chart.use(ind.make());
+      }
+
+      // Refresh legend values as the live feed ticks.
+      setInterval(() => {
+        for (const ind of indicators) {
+          const span = document.getElementById(`value-${ind.label}`);
+          if (span) span.textContent = fmt(ind.latest(chart.data));
+        }
+      }, 500);
+
+      // ---- simulated live feed --------------------------------------------
+
       let last = chart.data[chart.data.length - 1];
       setInterval(() => {
         last = tickCandle(last);

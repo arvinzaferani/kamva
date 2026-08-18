@@ -189,8 +189,12 @@ export class Chart implements ChartApi {
     );
     this.currentViewport = viewport;
     for (const plugin of this.plugins) plugin.update?.(this);
+    // base layers (background, grid, candles, axes)
     this.renderer.render(viewport, this.store.all);
-    for (const plugin of this.plugins) plugin.draw?.(this, viewport);
+    // plugin overlays (indicators, drawing tools) sit below the crosshair
+    const ctx = this.renderer.getPluginContext?.();
+    for (const plugin of this.plugins) plugin.draw?.(this, viewport, ctx);
+    this.renderer.drawOverlay?.(viewport, this.store.all);
   }
 
   // ---- internals --------------------------------------------------------

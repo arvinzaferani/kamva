@@ -1,4 +1,4 @@
-import type { Candle, Point, Renderer, Size, Viewport } from "@kamvachart/chart-core";
+import type { Candle, Point, PluginDrawContext, Renderer, Size, Viewport } from "@kamvachart/chart-core";
 import {
   defaultFormatters,
   drawAxes,
@@ -69,15 +69,37 @@ export class CanvasRenderer implements Renderer {
     const theme = this.theme;
     const ctx = this.ctx;
     ctx.save();
-    // Scale once so all layers work in CSS pixels regardless of DPR.
-    const dpr = this.devicePixelRatio();
-    ctx.scale(dpr, dpr);
+    // SetTransform (not scale) so every phase starts from the same CSS->device
+    // mapping regardless of what the previous phase left on the stack.
+    ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
     drawBackground(ctx, viewport, theme);
     drawGrid(ctx, viewport, theme);
     drawCandles(ctx, viewport, candles, theme);
     drawAxes(ctx, viewport, candles, theme, formatters);
-    if (this.pointer) drawCrosshair(ctx, viewport, this.pointer, theme, formatters);
     ctx.restore();
+  }
+
+  /**
+   * Top overlay, drawn after plugins so the crosshair always stays on top.
+   */
+  drawOverlay(viewport: Viewport, _candles: readonly Candle[]): void {
+    if (!this.pointer) return;
+    const formatters = this.options.formatters ?? defaultFormatters;
+    const theme = this.theme;
+    this.ctx.save();
+    this.ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
+    drawCrosshair(this.ctx, viewport, this.pointer, theme, formatters);
+    this.ctx.restore();
+  }
+
+  /**
+   * The 2D context plugins draw into. Returns the context already mapped to
+   * CSS-pixel space (same DPR transform the base layers use), so plugin
+   * coordinates from the viewport land in the same place as the candles.
+   */
+  getPluginContext(): PluginDrawContext {
+    this.ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
+    return this.ctx;
   }
 
   destroy(): void {

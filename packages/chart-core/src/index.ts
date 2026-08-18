@@ -10,5 +10,11 @@ export { DataStore } from "./data-store.js";
 export { Camera } from "./camera.js";
 export { Viewport, padPriceRange } from "./viewport.js";
 export { priceTicks, timeTickIndices } from "./ticks.js";
-export type { Renderer, Plugin, ChartApi, ChartEvents } from "./contracts.js";
+export type {
+  Renderer,
+  Plugin,
+  PluginDrawContext,
+  ChartApi,
+  ChartEvents,
+} from "./contracts.js";
 export { Chart, type ChartOptions } from "./chart.js";

@@ -2,6 +2,38 @@ import type { Candle, Point, Size } from "./types.js";
 import type { Viewport } from "./viewport.js";
 
 /**
+ * Minimal drawing surface plugins render into.
+ *
+ * Declared structurally (not the DOM's CanvasRenderingContext2D) so that
+ * chart-core stays free of browser types. Renderers supply a concrete
+ * implementation — the Canvas 2D context satisfies it as-is.
+ */
+export interface PluginDrawContext {
+  save(): void;
+  restore(): void;
+  beginPath(): void;
+  closePath(): void;
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  stroke(): void;
+  fill(): void;
+  setLineDash(segments: number[]): void;
+  fillRect(x: number, y: number, w: number, h: number): void;
+  fillText(text: string, x: number, y: number): void;
+  measureText(text: string): { width: number };
+  /**
+   * String color or renderer-specific paint object (e.g. gradients).
+   * Typed broadly so chart-core stays free of DOM canvas types.
+   */
+  strokeStyle: string | object;
+  fillStyle: string | object;
+  lineWidth: number;
+  font: string;
+  textAlign: string;
+  textBaseline: string;
+}
+
+/**
  * Renderer contract.
  *
  * chart-core never touches a canvas or the DOM; a renderer package
@@ -12,8 +44,16 @@ import type { Viewport } from "./viewport.js";
 export interface Renderer {
   /** Current drawing surface size in CSS pixels. */
   readonly size: Size;
-  /** Draw a full frame for the given viewport and data. */
+  /**
+   * Draw the base frame for the given viewport and data. Plugins draw on
+   * top via getPluginContext(); the crosshair-like overlay follows last,
+   * so it always sits above plugin content.
+   */
   render(viewport: Viewport, candles: readonly Candle[]): void;
+  /** Draw the top overlay (crosshair, hover labels) above plugins. */
+  drawOverlay?(viewport: Viewport, candles: readonly Candle[]): void;
+  /** Draw surface plugins render into, or undefined when unsupported. */
+  getPluginContext?(): PluginDrawContext | undefined;
   /** Release all resources (contexts, listeners, DOM nodes). */
   destroy(): void;
 }
@@ -45,8 +85,12 @@ export interface Plugin {
   initialize(chart: ChartApi): void;
   /** Called when data or camera changed, before draw. */
   update?(chart: ChartApi): void;
-  /** Called every frame after the base chart has rendered. */
-  draw?(chart: ChartApi, viewport: Viewport): void;
+  /**
+   * Called every frame after the base chart has rendered. `ctx` is the
+   * renderer's plugin surface (see getPluginContext); undefined when the
+   * renderer does not support plugin drawing.
+   */
+  draw?(chart: ChartApi, viewport: Viewport, ctx: PluginDrawContext | undefined): void;
   destroy?(): void;
 }
 
