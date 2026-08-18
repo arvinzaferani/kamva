@@ -12,6 +12,7 @@ import type { CanvasRenderer } from "./canvas-renderer.js";
  */
 export class InteractionController {
   private dragging = false;
+  private moved = false;
   private lastX = 0;
   private readonly abort = new AbortController();
 
@@ -43,6 +44,7 @@ export class InteractionController {
 
   private onPointerDown = (e: PointerEvent): void => {
     this.dragging = true;
+    this.moved = false;
     this.lastX = e.clientX;
     this.canvas.setPointerCapture(e.pointerId);
   };
@@ -56,6 +58,7 @@ export class InteractionController {
     if (!this.dragging) return;
     const dxPixels = e.clientX - this.lastX;
     this.lastX = e.clientX;
+    if (dxPixels !== 0) this.moved = true;
     const viewport = this.chart.viewport;
     if (!viewport || viewport.candleWidth <= 0) return;
     // Dragging right moves the view to older candles.
@@ -63,12 +66,17 @@ export class InteractionController {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
-    this.dragging = false;
     this.canvas.releasePointerCapture(e.pointerId);
+    if (this.dragging && !this.moved) {
+      const rect = this.canvas.getBoundingClientRect();
+      this.chart.emitClick(e.clientX - rect.left, e.clientY - rect.top);
+    }
+    this.dragging = false;
   };
 
   private onPointerLeave = (): void => {
     this.dragging = false;
+    this.moved = false;
     this.renderer.setPointer(undefined);
     this.chart.emit("pointer:leave", undefined);
   };

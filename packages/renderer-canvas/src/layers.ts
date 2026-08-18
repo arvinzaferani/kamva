@@ -1,24 +1,21 @@
-import type { Candle, Point, Viewport } from "@kamvachart/chart-core";
+import type { Candle, LineSeriesPoint, Point, RenderSurface, Viewport } from "@kamvachart/chart-core";
 import { priceTicks, timeTickIndices } from "@kamvachart/chart-core";
 import type { Theme } from "./theme.js";
 
 /**
  * Layers are stateless draw functions following the pipeline in
- * RENDER_PIPELINE.md: viewport (already resolved to pixel mapping) -> canvas.
- * Each takes the 2D context plus everything it needs explicitly, so layers
- * are individually testable and composable in any order.
+ * RENDER_PIPELINE.md: viewport (already resolved to pixel mapping) -> surface.
+ * Each takes the abstract RenderSurface plus everything it needs explicitly,
+ * so layers are individually testable, backend-agnostic (Canvas today, WebGL
+ * later) and composable in any order.
  */
 
-export function drawBackground(
-  ctx: CanvasRenderingContext2D,
-  viewport: Viewport,
-  theme: Theme,
-): void {
+export function drawBackground(ctx: RenderSurface, viewport: Viewport, theme: Theme): void {
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, viewport.size.width, viewport.size.height);
 }
 
-export function drawGrid(ctx: CanvasRenderingContext2D, viewport: Viewport, theme: Theme): void {
+export function drawGrid(ctx: RenderSurface, viewport: Viewport, theme: Theme): void {
   const { width, height } = viewport.size;
   ctx.strokeStyle = theme.grid;
   ctx.lineWidth = 1;
@@ -37,7 +34,7 @@ export function drawGrid(ctx: CanvasRenderingContext2D, viewport: Viewport, them
 }
 
 export function drawCandles(
-  ctx: CanvasRenderingContext2D,
+  ctx: RenderSurface,
   viewport: Viewport,
   candles: readonly Candle[],
   theme: Theme,
@@ -75,6 +72,37 @@ export function drawCandles(
   }
 }
 
+/** Draw a time/value line series, interpolated against the candle time axis. */
+export function drawLineSeries(
+  ctx: RenderSurface,
+  viewport: Viewport,
+  points: readonly LineSeriesPoint[],
+  candles: readonly Candle[],
+  color: string,
+  width: number,
+): void {
+  const { minTime, maxTime } = visibleTimeWindow(candles, viewport.visibleRange.from, viewport.visibleRange.to);
+  const start = Math.max(0, lowerBoundTime(points, minTime));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  let pen = false;
+  for (let i = start; i < points.length; i++) {
+    const p = points[i];
+    if (p === undefined || p.time > maxTime) break;
+    const frac = fractionalIndex(candles, p.time);
+    if (frac === undefined) continue;
+    const x = viewport.xForIndex(frac);
+    const y = viewport.yForPrice(p.value);
+    if (pen) ctx.lineTo(x, y);
+    else {
+      ctx.moveTo(x, y);
+      pen = true;
+    }
+  }
+  ctx.stroke();
+}
+
 export interface AxisFormatters {
   price(value: number): string;
   time(value: number): string;
@@ -89,7 +117,7 @@ export const defaultFormatters: AxisFormatters = {
 };
 
 export function drawAxes(
-  ctx: CanvasRenderingContext2D,
+  ctx: RenderSurface,
   viewport: Viewport,
   candles: readonly Candle[],
   theme: Theme,
@@ -114,7 +142,7 @@ export function drawAxes(
 }
 
 export function drawCrosshair(
-  ctx: CanvasRenderingContext2D,
+  ctx: RenderSurface,
   viewport: Viewport,
   pointer: Point,
   theme: Theme,
@@ -148,4 +176,52 @@ export function drawCrosshair(
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   ctx.fillText(label, width - padX, y);
+}
+
+// ---- helpers -------------------------------------------------------------
+
+function visibleTimeWindow(
+  candles: readonly Candle[],
+  from: number,
+  to: number,
+): { minTime: number; maxTime: number } {
+  if (candles.length === 0) return { minTime: 0, maxTime: 0 };
+  const lo = Math.max(0, Math.min(candles.length - 1, Math.floor(from)));
+  const hi = Math.max(0, Math.min(candles.length - 1, Math.ceil(to)));
+  return { minTime: candles[lo]?.time ?? 0, maxTime: candles[hi]?.time ?? 0 };
+}
+
+function lowerBoundTime(points: readonly LineSeriesPoint[], time: number): number {
+  let lo = 0;
+  let hi = points.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((points[mid]?.time ?? -Infinity) < time) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function fractionalIndex(candles: readonly Candle[], time: number): number | undefined {
+  if (candles.length === 0) return undefined;
+  let lo = 0;
+  let hi = candles.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((candles[mid]?.time ?? 0) <= time) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (found === -1) return undefined;
+  const c0 = candles[found];
+  if (c0 === undefined) return undefined;
+  const c1 = candles[found + 1];
+  if (c1 === undefined) return found;
+  const span = c1.time - c0.time;
+  if (span <= 0) return found;
+  return found + (time - c0.time) / span;
 }

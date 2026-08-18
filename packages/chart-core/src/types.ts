@@ -14,6 +14,12 @@ export interface Candle {
   readonly volume?: number;
 }
 
+/** A single (time, value) point of a line series. `time` strictly increasing. */
+export interface LineSeriesPoint {
+  readonly time: number;
+  readonly value: number;
+}
+
 /** Inclusive range of candle indices currently visible. Fractional bounds allow sub-candle panning. */
 export interface VisibleRange {
   readonly from: number;

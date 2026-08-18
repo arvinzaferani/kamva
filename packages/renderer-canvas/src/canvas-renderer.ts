@@ -1,4 +1,13 @@
-import type { Candle, Point, PluginDrawContext, Renderer, Size, Viewport } from "@kamvachart/chart-core";
+import type {
+  Candle,
+  LineSeriesPoint,
+  Point,
+  RenderableSeries,
+  Renderer,
+  RenderSurface,
+  Size,
+  Viewport,
+} from "@kamvachart/chart-core";
 import {
   defaultFormatters,
   drawAxes,
@@ -6,6 +15,7 @@ import {
   drawCandles,
   drawCrosshair,
   drawGrid,
+  drawLineSeries,
   type AxisFormatters,
 } from "./layers.js";
 import { darkTheme, type Theme } from "./theme.js";
@@ -20,7 +30,10 @@ export interface CanvasRendererOptions {
  *
  * Owns the canvas element sizing (device pixel ratio aware) and composes
  * the layer draw functions in pipeline order:
- * background -> grid -> candles -> axes -> crosshair.
+ * background -> grid -> series -> axes, then plugins, then the crosshair
+ * overlay. All layers render through the abstract RenderSurface (the 2D
+ * context), and every phase uses an absolute transform so plugin and
+ * crosshair coordinates land in the same CSS-pixel space as the candles.
  */
 export class CanvasRenderer implements Renderer {
   private readonly ctx: CanvasRenderingContext2D;
@@ -64,40 +77,57 @@ export class CanvasRenderer implements Renderer {
     this.pointer = point;
   }
 
-  render(viewport: Viewport, candles: readonly Candle[]): void {
-    const formatters = this.options.formatters ?? defaultFormatters;
-    const theme = this.theme;
-    const ctx = this.ctx;
-    ctx.save();
+  beginFrame(): void {
+    this.ctx.save();
     // SetTransform (not scale) so every phase starts from the same CSS->device
-    // mapping regardless of what the previous phase left on the stack.
-    ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
-    drawBackground(ctx, viewport, theme);
-    drawGrid(ctx, viewport, theme);
-    drawCandles(ctx, viewport, candles, theme);
-    drawAxes(ctx, viewport, candles, theme, formatters);
-    ctx.restore();
+    // mapping regardless of what the previous frame left behind.
+    this.ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
   }
 
-  /**
-   * Top overlay, drawn after plugins so the crosshair always stays on top.
-   */
-  drawOverlay(viewport: Viewport, _candles: readonly Candle[]): void {
-    if (!this.pointer) return;
-    const formatters = this.options.formatters ?? defaultFormatters;
-    const theme = this.theme;
-    this.ctx.save();
-    this.ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
-    drawCrosshair(this.ctx, viewport, this.pointer, theme, formatters);
+  endFrame(): void {
     this.ctx.restore();
   }
 
-  /**
-   * The 2D context plugins draw into. Returns the context already mapped to
-   * CSS-pixel space (same DPR transform the base layers use), so plugin
-   * coordinates from the viewport land in the same place as the candles.
-   */
-  getPluginContext(): PluginDrawContext {
+  render(viewport: Viewport, series: readonly RenderableSeries[]): void {
+    const theme = this.theme;
+    const candles = firstCandleSeries(series) as RenderableSeries | undefined;
+    const candleData = (candles?.data as readonly Candle[] | undefined) ?? [];
+    drawBackground(this.ctx, viewport, theme);
+    drawGrid(this.ctx, viewport, theme);
+    for (const s of series) {
+      if (s.type === "candles" && s.data.length > 0) {
+        drawCandles(this.ctx, viewport, s.data as readonly Candle[], theme);
+      } else if (s.type === "line" && candles !== undefined) {
+        drawLineSeries(
+          this.ctx,
+          viewport,
+          s.data as readonly LineSeriesPoint[],
+          candleData,
+          s.options.color ?? "#2962ff",
+          s.options.lineWidth ?? 2,
+        );
+      }
+    }
+    drawAxes(this.ctx, viewport, candleData, theme, this.options.formatters ?? defaultFormatters);
+  }
+
+  /** Top overlay, drawn after plugins so the crosshair always stays on top. */
+  drawOverlay(viewport: Viewport, _series: readonly RenderableSeries[]): void {
+    if (!this.pointer) return;
+    this.ctx.save();
+    this.ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
+    drawCrosshair(
+      this.ctx,
+      viewport,
+      this.pointer,
+      this.theme,
+      this.options.formatters ?? defaultFormatters,
+    );
+    this.ctx.restore();
+  }
+
+  /** The 2D context plugins draw into (CSS pixel space). */
+  getPluginContext(): RenderSurface {
     this.ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
     return this.ctx;
   }
@@ -123,4 +153,11 @@ export class CanvasRenderer implements Renderer {
     if (this.canvas.height !== deviceHeight) this.canvas.height = deviceHeight;
     this.cssSize = { width, height };
   }
+}
+
+function firstCandleSeries(series: readonly RenderableSeries[]): RenderableSeries | undefined {
+  for (const s of series) {
+    if (s.type === "candles") return s;
+  }
+  return undefined;
 }

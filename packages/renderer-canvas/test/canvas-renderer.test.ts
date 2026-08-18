@@ -66,7 +66,9 @@ describe("CanvasRenderer", () => {
   it("renders the base frame with the same CSS->device transform", () => {
     const renderer = new CanvasRenderer(fakeCanvas(ctx));
     const viewport = new Viewport({ width: 800, height: 400 }, { from: 0, to: 9 }, { min: 0, max: 100 });
+    renderer.beginFrame();
     renderer.render(viewport, []);
+    renderer.endFrame();
     expect(ctx.transforms).toContainEqual([2, 0, 0, 2, 0, 0]);
     renderer.destroy();
   });

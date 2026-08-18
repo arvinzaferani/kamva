@@ -10,6 +10,7 @@ export {
   drawBackground,
   drawGrid,
   drawCandles,
+  drawLineSeries,
   drawAxes,
   drawCrosshair,
   defaultFormatters,

@@ -1,10 +1,10 @@
-import type { PluginDrawContext, Renderer } from "@kamvachart/chart-core";
+import type { RenderSurface, Renderer } from "@kamvachart/chart-core";
 import { Chart } from "@kamvachart/chart-core";
 import { describe, expect, it } from "vitest";
 import { bollingerBands, ichimoku, macd, rsi, sma } from "../src/index.js";
 import { closes } from "./helpers.js";
 
-interface FakeCtx extends PluginDrawContext {
+interface FakeCtx extends RenderSurface {
   readonly calls: string[];
   readonly points: Array<{ x: number; y: number }>;
 }
@@ -60,6 +60,8 @@ function makeChart(ctx: FakeCtx): { chart: Chart; renderer: Renderer & { frames:
   const renderer: Renderer & { frames: number } = {
     size: { width: 800, height: 400 },
     frames: 0,
+    beginFrame() {},
+    endFrame() {},
     render() {
       this.frames++;
     },

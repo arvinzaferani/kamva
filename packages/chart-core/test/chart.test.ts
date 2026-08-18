@@ -15,6 +15,8 @@ function fakeRenderer(): Renderer & { frames: number } {
   return {
     size: { width: 800, height: 400 },
     frames: 0,
+    beginFrame() {},
+    endFrame() {},
     render() {
       this.frames++;
     },

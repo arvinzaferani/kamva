@@ -1,14 +1,17 @@
-import type { Candle, Point, Size } from "./types.js";
+import type { Candle, LineSeriesPoint, Point, Size } from "./types.js";
+import type { Series, SeriesOptions, SeriesType } from "./series.js";
 import type { Viewport } from "./viewport.js";
 
 /**
- * Minimal drawing surface plugins render into.
+ * The abstract render surface every renderer exposes.
  *
- * Declared structurally (not the DOM's CanvasRenderingContext2D) so that
- * chart-core stays free of browser types. Renderers supply a concrete
- * implementation — the Canvas 2D context satisfies it as-is.
+ * Drawing goes through these primitives — never directly to a canvas or GPU
+ * context — so the same scene can be produced by a Canvas 2D backend today
+ * and a WebGL/WebGPU backend later. Declared structurally (not the DOM's
+ * CanvasRenderingContext2D) so chart-core stays free of browser types; the
+ * Canvas 2D context satisfies it as-is.
  */
-export interface PluginDrawContext {
+export interface RenderSurface {
   save(): void;
   restore(): void;
   beginPath(): void;
@@ -34,37 +37,80 @@ export interface PluginDrawContext {
 }
 
 /**
+ * A snapshot of one series handed to the renderer each frame. The type
+ * selects which layer draws it; values are in the series' own domain
+ * (candles or time/value points).
+ */
+export interface RenderableSeries {
+  readonly id: string;
+  readonly type: SeriesType;
+  readonly options: Readonly<SeriesOptions>;
+  readonly data: readonly Candle[] | readonly LineSeriesPoint[];
+}
+
+/**
  * Renderer contract.
  *
  * chart-core never touches a canvas or the DOM; a renderer package
  * (e.g. @kamvachart/renderer-canvas) implements this interface and is
- * injected into the Chart. This is what keeps the core framework- and
- * surface-agnostic (Canvas today, WebGL/Offscreen later).
+ * injected into the Chart. This keeps the core framework- and surface-
+ * agnostic and lets the scene render through any backend.
  */
 export interface Renderer {
   /** Current drawing surface size in CSS pixels. */
   readonly size: Size;
-  /**
-   * Draw the base frame for the given viewport and data. Plugins draw on
-   * top via getPluginContext(); the crosshair-like overlay follows last,
-   * so it always sits above plugin content.
-   */
-  render(viewport: Viewport, candles: readonly Candle[]): void;
+  /** Start of a frame. Renderers refresh any per-frame state here. */
+  beginFrame(): void;
+  /** End of a frame, after base scene, plugins and overlay are drawn. */
+  endFrame(): void;
+  /** Draw the base scene (axes, grid, and each series by type). */
+  render(viewport: Viewport, series: readonly RenderableSeries[]): void;
   /** Draw the top overlay (crosshair, hover labels) above plugins. */
-  drawOverlay?(viewport: Viewport, candles: readonly Candle[]): void;
-  /** Draw surface plugins render into, or undefined when unsupported. */
-  getPluginContext?(): PluginDrawContext | undefined;
+  drawOverlay?(viewport: Viewport, series: readonly RenderableSeries[]): void;
+  /** The surface plugins draw into, or undefined when unsupported. */
+  getPluginContext?(): RenderSurface | undefined;
   /** Release all resources (contexts, listeners, DOM nodes). */
   destroy(): void;
 }
 
+/** Position under the crosshair resolved into chart domain space. */
+export interface CrosshairPosition {
+  readonly x: number;
+  readonly y: number;
+  /** Fractional candle index under the pointer. */
+  readonly index: number;
+  readonly time: number;
+  readonly price: number;
+}
+
+/** Visible range change, in index space plus resolved times. */
+export interface VisibleRangePayload {
+  readonly from: number;
+  readonly to: number;
+  readonly fromTime: number;
+  readonly toTime: number;
+}
+
+/** A click on the chart, resolved into domain space. */
+export interface ClickPayload {
+  readonly x: number;
+  readonly y: number;
+  readonly index: number;
+  readonly time: number;
+  readonly price: number;
+}
+
 /** Events emitted by the core. Payloads are stable public API. */
 export interface ChartEvents extends Record<string, unknown> {
-  /** Fired after data changes (setData/append/update). */
+  /** Fired after data changes (setData/append/update/updateMany). */
   "data:changed": { size: number };
-  /** Fired when the visible range changes (zoom/pan/fit). */
-  "camera:changed": { from: number; to: number };
-  /** Fired when the pointer moves over the chart (crosshair source). */
+  /** Fired when the visible range changes (zoom/pan/fit). Semantic. */
+  "visibleRangeChange": VisibleRangePayload;
+  /** Fired when the pointer moves over the chart, domain-resolved. */
+  "crosshairMove": CrosshairPosition | undefined;
+  /** Fired on a pointer click, domain-resolved. */
+  click: ClickPayload;
+  /** Raw pointer position (internal crosshair source). */
   "pointer:move": Point;
   /** Fired when the pointer leaves the chart. */
   "pointer:leave": undefined;
@@ -86,11 +132,11 @@ export interface Plugin {
   /** Called when data or camera changed, before draw. */
   update?(chart: ChartApi): void;
   /**
-   * Called every frame after the base chart has rendered. `ctx` is the
-   * renderer's plugin surface (see getPluginContext); undefined when the
-   * renderer does not support plugin drawing.
+   * Called every frame after the base chart has rendered. `surface` is the
+   * renderer's abstract draw surface (see getPluginContext); undefined when
+   * the renderer does not support plugin drawing.
    */
-  draw?(chart: ChartApi, viewport: Viewport, ctx: PluginDrawContext | undefined): void;
+  draw?(chart: ChartApi, viewport: Viewport, surface: RenderSurface | undefined): void;
   destroy?(): void;
 }
 
@@ -99,6 +145,8 @@ export interface Plugin {
  * Kept minimal on purpose; extending it is a semver-minor event.
  */
 export interface ChartApi {
+  addCandlestickSeries(options?: SeriesOptions): Series<Candle>;
+  addLineSeries(options?: SeriesOptions): Series<LineSeriesPoint>;
   setData(candles: readonly Candle[]): void;
   append(candle: Candle): void;
   update(candle: Candle): void;

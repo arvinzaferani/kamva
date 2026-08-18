@@ -21,9 +21,14 @@ import { createChart } from "@kamvachart/renderer-canvas";
 
 const chart = createChart(document.querySelector("canvas"));
 
-chart.setData(candles);   // full series (sorted by time)
-chart.append(candle);     // new bar
-chart.update(candle);     // tick the last bar
+const candles = chart.addCandlestickSeries();          // main series
+candles.setData(candlesData);                          // full series (sorted by time)
+chart.append(candle);                                  // new bar
+chart.update(candle);                                  // tick the last bar
+
+const emaLine = chart.addLineSeries({ color: "#2962ff", lineWidth: 2 });
+emaLine.setData(emaPoints);                            // { time, value }[]
+
 chart.zoom(2);            // programmatic navigation
 chart.pan(150);
 chart.fit();
@@ -31,6 +36,19 @@ chart.destroy();
 ```
 
 Wheel = zoom (anchored at cursor), drag = pan, hover = crosshair.
+
+`setData` / `append` / `update` on the chart are shortcuts that target the
+first candle series (main series), so existing code keeps working.
+
+### Events
+
+Public events are in domain space (index / time / price), never pixels:
+
+```ts
+chart.on("crosshairMove", ({ index, time }) => { /* hovered bar */ });
+chart.on("visibleRangeChange", ({ from, to }) => { /* scroll/zoom */ });
+chart.on("click", ({ time, price }) => {});
+```
 
 Run the demo:
 
@@ -49,12 +67,16 @@ chart.use({
   name: "my-indicator",
   initialize(chart) { /* subscribe via chart.on(...) */ },
   update(chart)     { /* recompute from chart.data */ },
-  draw(chart, viewport) { /* overlay via viewport.xForIndex / yForPrice */ },
+  draw(chart, viewport, ctx) {
+    /* overlay via ctx (RenderSurface): ctx.strokeStyle, ctx.beginPath, ctx.stroke */
+  },
   destroy() {},
 });
 ```
 
-Plugins see only the public `ChartApi` — never internals.
+Plugins see only the public `ChartApi` — never internals. The draw context is
+a `RenderSurface` (a structural 2D surface), so the core stays DOM-free while
+the canvas renderer provides a `CanvasRenderingContext2D`.
 
 ## Indicators
 

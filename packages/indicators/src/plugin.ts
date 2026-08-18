@@ -5,7 +5,7 @@
  * when the data actually changed (cheap length + last-candle-reference
  * check), never on pan/zoom. Drawing is virtualized to the visible range.
  */
-import type { Candle, ChartApi, Plugin, PluginDrawContext, Viewport } from "@kamvachart/chart-core";
+import type { Candle, ChartApi, Plugin, RenderSurface, Viewport } from "@kamvachart/chart-core";
 import type { IndicatorArea, IndicatorLine, IndicatorResult } from "./types.js";
 
 interface VerticalMap {
@@ -27,7 +27,7 @@ function yForValue(viewport: Viewport, map: VerticalMap, value: number): number 
   return viewport.yForPrice(value);
 }
 
-function drawLine(ctx: PluginDrawContext, viewport: Viewport, line: IndicatorLine): void {
+function drawLine(ctx: RenderSurface, viewport: Viewport, line: IndicatorLine): void {
   const { values, offset = 0 } = line;
   const width = line.width ?? 1.5;
   const dashed = line.dashed ?? false;
@@ -73,7 +73,7 @@ function drawLine(ctx: PluginDrawContext, viewport: Viewport, line: IndicatorLin
   if (dashed) ctx.setLineDash([]);
 }
 
-function drawArea(ctx: PluginDrawContext, viewport: Viewport, area: IndicatorArea): void {
+function drawArea(ctx: RenderSurface, viewport: Viewport, area: IndicatorArea): void {
   const { top, bottom, offset = 0 } = area;
   const first = Math.max(0, Math.floor(viewport.visibleRange.from));
   const last = Math.min(
@@ -144,7 +144,7 @@ export function indicatorPlugin(options: IndicatorPluginOptions): Plugin {
         result = options.compute(data);
       }
     },
-    draw(_chart: ChartApi, viewport: Viewport, ctx: PluginDrawContext | undefined): void {
+    draw(_chart: ChartApi, viewport: Viewport, ctx: RenderSurface | undefined): void {
       if (ctx === undefined) return;
       for (const area of result.areas ?? []) drawArea(ctx, viewport, area);
       for (const line of result.lines) drawLine(ctx, viewport, line);

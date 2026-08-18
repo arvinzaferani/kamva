@@ -140,7 +140,41 @@
       import { generateCandles, tickCandle, nextCandle } from "./mock-data.js";
 
       const chart = createChart(document.getElementById("chart"));
-      chart.setData(generateCandles(5000));
+
+      // ---- new Series API: explicit candle series + a native line series ----
+
+      const candlesSeries = chart.addCandlestickSeries();
+      candlesSeries.setData(generateCandles(5000));
+
+      // A native line series (drawn by the renderer, no plugin needed).
+      const emaLine = chart.addLineSeries({ color: indicatorColors.blue, lineWidth: 2 });
+      const { data } = chart;
+      emaLine.setData(
+        data
+          .map((c, i) => ({ time: c.time, value: computeEMA(data, 50)[i] }))
+          .filter((p) => p.value !== undefined),
+      );
+
+      // ---- crosshair HUD ---------------------------------------------------
+
+      const hud = document.createElement("div");
+      hud.id = "hud";
+      hud.style.cssText =
+        "position:fixed;top:12px;left:12px;color:#d1d4dc;" +
+        "font:12px ui-monospace,monospace;font-variant-numeric:tabular-nums;" +
+        "background:rgba(19,23,34,.85);border:1px solid #2a2e39;" +
+        "border-radius:8px;padding:8px 10px;pointer-events:none";
+      hud.textContent = "Hover the chart";
+      document.body.appendChild(hud);
+      chart.on("crosshairMove", ({ index, time }) => {
+        const c = index >= 0 && index < candlesSeries.data.length ? candlesSeries.data[index] : undefined;
+        hud.textContent = c
+          ? `${new Date(time * 1000).toLocaleString()}  O ${c.open}  H ${c.high}  L ${c.low}  C ${c.close}`
+          : "Hover the chart";
+      });
+      chart.on("click", ({ time }) => {
+        hud.textContent = `Clicked bar at ${new Date(time * 1000).toLocaleString()}`;
+      });
 
       // ---- collapsible panel ----------------------------------------------
 
