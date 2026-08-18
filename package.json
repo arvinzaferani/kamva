@@ -1,0 +1,17 @@
+{
+  "name": "kamvachart",
+  "private": true,
+  "version": "0.1.0",
+  "description": "KamvaChart — framework-agnostic, high-performance financial charting engine.",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --sort build",
+    "test": "vitest run",
+    "typecheck": "pnpm -r --sort typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "packageManager": "pnpm@10.33.1"
+}

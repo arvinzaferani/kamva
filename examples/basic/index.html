@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KamvaChart — basic example</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #131722;
+      }
+      #chart {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+        cursor: crosshair;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="chart"></canvas>
+    <script type="importmap">
+      {
+        "imports": {
+          "@kamvachart/chart-core": "../../packages/chart-core/dist/index.js",
+          "@kamvachart/renderer-canvas": "../../packages/renderer-canvas/dist/index.js"
+        }
+      }
+    </script>
+    <script type="module">
+      import { createChart } from "@kamvachart/renderer-canvas";
+      import { generateCandles, tickCandle, nextCandle } from "./mock-data.js";
+
+      const chart = createChart(document.getElementById("chart"));
+      chart.setData(generateCandles(5000));
+
+      // Simulated live feed: tick the last candle, roll a new one every 3s.
+      let last = chart.data[chart.data.length - 1];
+      setInterval(() => {
+        last = tickCandle(last);
+        chart.update(last);
+      }, 250);
+      setInterval(() => {
+        last = nextCandle(last);
+        chart.append(last);
+      }, 3000);
+    </script>
+  </body>
+</html>
