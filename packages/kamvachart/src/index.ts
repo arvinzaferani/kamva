@@ -1,127 +1,78 @@
 /**
- * kamvachart — the public v1 facade.
+ * kamvachart — public v1 facade (curated).
  *
- * Re-exports the real surface of the underlying packages so consumers need a
- * single import:
+ *   npm install kamvachart
+ *   import { createChart, sma, ema, rsi } from "kamvachart";
  *
- *   import { Chart, CanvasRenderer, SMA, EMA, RSI } from "kamvachart";
+ * Only this surface is part of the v1 contract. It is deliberately minimal:
+ * the underlying packages expose more (Viewport, PriceScale, tick helpers,
+ * raw layers, ...); consumers who need those can depend on the scoped
+ * packages directly.
  *
- * The indicator plugin factories are aliased under their conventional
- * uppercase names (`SMA` = `sma`, ...); every other name is re-exported
- * verbatim from the package that owns it.
+ * Names are the REAL exports from the owning packages — nothing is invented
+ * here. Note the pure-math functions are `computeBollinger` / `computeIchimoku`
+ * (not computeBollingerBands / computeIchimoku).
  */
 
-// ---- chart-core: engine, state, camera, events -------------------------
+// ---- engine -----------------------------------------------------------
 
-export {
-  Chart,
-  type ChartOptions,
-  TimeScale,
-  PriceScale,
-  type PriceScaleDeps,
-  Viewport,
-  padPriceRange,
-  priceTicks,
-  timeTickIndices,
-} from "@kamvachart/chart-core";
+export { Chart } from "@kamvachart/chart-core";
+// Minimal types every consumer of the facade needs to type their code.
 export type {
+  ChartOptions,
   Candle,
   LineSeriesPoint,
   Series,
   SeriesOptions,
-  CandlestickOptions,
-  LineOptions,
-  SeriesType,
-  Renderer,
-  RenderSurface,
-  RenderableSeries,
   Plugin,
   ChartApi,
   ChartEvents,
   ChartSubscriptions,
   CrosshairPosition,
-  CrosshairSeriesDatum,
   VisibleRange,
-  VisibleRangePayload,
-  ClickPayload,
   TimeScaleApi,
-  TimeRange,
   PriceScaleApi,
   PriceRange,
-  Size,
-  Point,
 } from "@kamvachart/chart-core";
 
-// ---- renderer-canvas: Canvas 2D output + DOM interaction ---------------
+// ---- canvas output ----------------------------------------------------
+
+export { createChart, CanvasRenderer } from "@kamvachart/renderer-canvas";
+export type { CreateChartOptions, CanvasRendererOptions } from "@kamvachart/renderer-canvas";
+
+// ---- indicators -------------------------------------------------------
 
 export {
-  CanvasRenderer,
-  type CanvasRendererOptions,
-  createChart,
-  type CreateChartOptions,
-  InteractionController,
-  darkTheme,
-  lightTheme,
-  type Theme,
-  drawBackground,
-  drawGrid,
-  drawCandles,
-  drawLineSeries,
-  drawAxes,
-  drawCrosshair,
-  defaultFormatters,
-  type AxisFormatters,
-} from "@kamvachart/renderer-canvas";
-
-// ---- indicators: plugin factories (uppercase aliases) ------------------
-
-import { sma, ema, rsi } from "@kamvachart/indicators";
-
-/** Alias of `sma` — simple moving average plugin factory. */
-export const SMA = sma;
-/** Alias of `ema` — exponential moving average plugin factory. */
-export const EMA = ema;
-/** Alias of `rsi` — relative strength index plugin factory. */
-export const RSI = rsi;
-
-export {
-  bollingerBands,
+  sma,
+  ema,
+  rsi,
   macd,
+  bollingerBands,
   vwap,
   atr,
   ichimoku,
-  indicatorColors,
-  indicatorPlugin,
-  type IndicatorPluginOptions,
 } from "@kamvachart/indicators";
+
 // Pure computation (headless / backtests / unit tests) — no Plugin involved.
 export {
   computeSMA,
   computeEMA,
   computeRSI,
-  computeBollinger,
   computeMACD,
+  computeBollinger,
   computeVWAP,
   computeATR,
   computeIchimoku,
 } from "@kamvachart/indicators";
+
+// Option types for the plugin factories above.
 export type {
   SmaOptions,
   EmaOptions,
   RsiOptions,
-  BollingerOptions,
   MacdOptions,
+  BollingerOptions,
   VwapOptions,
   AtrOptions,
   IchimokuOptions,
-  IchimokuPeriods,
-  LineStyle,
-  IndicatorSeries,
-  IndicatorLine,
-  IndicatorArea,
-  IndicatorResult,
-  IndicatorValueDomain,
-  BollingerValues,
-  MacdValues,
-  IchimokuValues,
 } from "@kamvachart/indicators";
