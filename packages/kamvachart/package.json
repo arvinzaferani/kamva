@@ -1,30 +1,32 @@
 {
-    "name": "kamvachart",
-    "version": "1.0.0",
-    "description": "Framework-agnostic, high-performance financial charting library.",
-    "type": "module",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      }
-    },
-    "files": [
-      "dist"
-    ],
-    "sideEffects": false,
-    "scripts": {
-      "build": "tsc -p tsconfig.json",
-      "typecheck": "tsc -p tsconfig.json --noEmit"
-    },
-    "dependencies": {
-      "@kamvachart/chart-core": "workspace:*",
-      "@kamvachart/renderer-canvas": "workspace:*",
-      "@kamvachart/indicators": "workspace:*"
-    },
-    "devDependencies": {
-      "typescript": "^5.5.0"
+  "name": "kamvachart",
+  "version": "1.0.0",
+  "description": "Framework-agnostic, high-performance financial charting library.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup && rollup -c rollup.dts.config.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@kamvachart/chart-core": "workspace:*",
+    "@kamvachart/indicators": "workspace:*",
+    "@kamvachart/renderer-canvas": "workspace:*",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "rollup": "^4.62.4",
+    "rollup-plugin-dts": "^6.5.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0"
   }
+}

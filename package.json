@@ -13,5 +13,10 @@
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   },
-  "packageManager": "pnpm@10.33.1"
+  "packageManager": "pnpm@10.33.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
 }
