@@ -31,6 +31,22 @@ importers:
         specifier: ^5.5.0
         version: 5.9.3
 
+  packages/kamvachart:
+    dependencies:
+      '@kamvachart/chart-core':
+        specifier: workspace:*
+        version: link:../chart-core
+      '@kamvachart/indicators':
+        specifier: workspace:*
+        version: link:../indicators
+      '@kamvachart/renderer-canvas':
+        specifier: workspace:*
+        version: link:../renderer-canvas
+    devDependencies:
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
   packages/renderer-canvas:
     dependencies:
       '@kamvachart/chart-core':

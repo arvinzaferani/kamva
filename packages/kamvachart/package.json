@@ -1,0 +1,30 @@
+{
+    "name": "kamvachart",
+    "version": "1.0.0",
+    "description": "Framework-agnostic, high-performance financial charting library.",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "files": [
+      "dist"
+    ],
+    "sideEffects": false,
+    "scripts": {
+      "build": "tsc -p tsconfig.json",
+      "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+      "@kamvachart/chart-core": "workspace:*",
+      "@kamvachart/renderer-canvas": "workspace:*",
+      "@kamvachart/indicators": "workspace:*"
+    },
+    "devDependencies": {
+      "typescript": "^5.5.0"
+    }
+  }
