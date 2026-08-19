@@ -24,6 +24,10 @@ function fakeRenderer(): Renderer & { frames: number } {
   };
 }
 
+function linePoint(time: number, value: number) {
+  return { time, value };
+}
+
 describe("Chart", () => {
   it("renders a frame after setData", () => {
     const chart = new Chart();
@@ -107,6 +111,101 @@ describe("Chart", () => {
     expect(renderer.frames).toBe(1);
     // Generous CI bound; the real budget is <16ms for the render loop alone.
     expect(elapsed).toBeLessThan(500);
+    chart.destroy();
+  });
+
+  it("renders multiple independent series in a single frame", () => {
+    const rendered: string[] = [];
+    const renderer: Renderer = {
+      size: { width: 800, height: 400 },
+      beginFrame() {},
+      endFrame() {},
+      render(_vp, series) {
+        rendered.push(...series.map((s) => `${s.type}:${s.id}`));
+      },
+      destroy() {},
+    };
+    const chart = new Chart();
+    chart.attachRenderer(renderer);
+    chart.setData(series(10)); // primary candle series
+    chart.addLineSeries({ color: "#f00" }).setData([
+      linePoint(0, 100),
+      linePoint(5 * 1000, 102),
+      linePoint(9 * 1000, 98),
+    ]);
+    chart.addCandlestickSeries({ color: "#0f0" }).setData(series(10));
+    chart.renderFrame();
+    expect(rendered).toHaveLength(3);
+    expect(rendered[0]).toBe("candles:candles-1"); // primary
+    expect(rendered[1]).toBe("line:line-2");
+    expect(rendered[2]).toBe("candles:candles-3");
+    chart.destroy();
+  });
+
+  it("removing a non-primary series leaves the primary and others intact", () => {
+    const chart = new Chart();
+    chart.attachRenderer(fakeRenderer());
+    chart.setData(series(10));
+    const line = chart.addLineSeries({});
+    const extra = chart.addCandlestickSeries({});
+    expect(chart.data.length).toBe(10); // primary still backed
+    line.remove();
+    extra.remove();
+    expect(chart.data.length).toBe(10);
+    chart.destroy();
+  });
+
+  it("renders a candle series added via the Series API without chart.setData", () => {
+    // Regression: renderFrame used to bail when the x-axis reference series
+    // was never seeded, so `chart.addCandlestickSeries().setData(...)` — the
+    // documented quick-start — rendered nothing.
+    const rendered: string[] = [];
+    const renderer: Renderer = {
+      size: { width: 800, height: 400 },
+      beginFrame() {},
+      endFrame() {},
+      render(_vp, s) {
+        rendered.push(...s.map((x) => `${x.type}:${x.id}`));
+      },
+      destroy() {},
+    };
+    const chart = new Chart();
+    chart.attachRenderer(renderer);
+    chart.addCandlestickSeries().setData(series(5));
+    chart.renderFrame();
+    expect(rendered[0]).toBe("candles:candles-1"); // first candle = primary
+    expect(chart.viewport).toBeDefined();
+    expect(chart.viewport!.visibleRange.to).toBeGreaterThanOrEqual(4);
+    chart.destroy();
+  });
+
+  it("does not render a hidden series", () => {
+    const rendered: string[] = [];
+    const renderer: Renderer = {
+      size: { width: 800, height: 400 },
+      beginFrame() {},
+      endFrame() {},
+      render(_vp, s) {
+        rendered.push(...s.map((x) => x.id));
+      },
+      destroy() {},
+    };
+    const chart = new Chart();
+    chart.attachRenderer(renderer);
+    chart.setData(series(10)); // primary candles-1
+    const line = chart.addLineSeries({});
+    line.setData([
+      linePoint(0, 100),
+      linePoint(9 * 1000, 98),
+    ]);
+    chart.renderFrame();
+    expect(rendered).toContain(line.id);
+
+    rendered.length = 0;
+    line.setVisible(false);
+    chart.renderFrame();
+    expect(rendered).not.toContain(line.id);
+    expect(rendered).toContain("candles-1");
     chart.destroy();
   });
 });

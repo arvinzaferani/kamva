@@ -23,7 +23,9 @@ export interface Series<T extends { readonly time: number }> {
   /** Stable within its chart. */
   readonly id: string;
   readonly type: SeriesType;
+  /** Visual options (read-only view; mutate via applyOptions). */
   readonly options: Readonly<SeriesOptions>;
+  /** Data (read-only view; mutate via setData/append/update/updateMany). */
   readonly data: readonly T[];
   /** Replace the entire series (input must be sorted by time). */
   setData(data: readonly T[]): void;
@@ -33,8 +35,16 @@ export interface Series<T extends { readonly time: number }> {
   update(item: T): void;
   /** Append several items, each continuing the sorted series. */
   updateMany(items: readonly T[]): void;
-  /** Update visual options. */
+  /** Update visual options (merges; undefined fields are left unchanged). */
   applyOptions(options: SeriesOptions): void;
+  /** Current visual options. */
+  getOptions(): Readonly<SeriesOptions>;
+  /** Current data. */
+  getData(): readonly T[];
+  /** Show/hide the series. Hidden series are not rendered nor autoscaled. */
+  setVisible(visible: boolean): void;
+  /** Whether the series is currently visible. */
+  isVisible(): boolean;
   /** Remove this series from its chart. */
   remove(): void;
 }
@@ -50,6 +60,7 @@ export class SeriesImpl<T extends { readonly time: number }> implements Series<T
   private items: T[] = [];
   private opts: { color: string; lineWidth: number };
   private removed = false;
+  private visible = true;
 
   constructor(
     readonly id: string,
@@ -74,8 +85,28 @@ export class SeriesImpl<T extends { readonly time: number }> implements Series<T
     return this.items;
   }
 
+  getOptions(): Readonly<SeriesOptions> {
+    return this.opts;
+  }
+
+  getData(): readonly T[] {
+    return this.items;
+  }
+
+  setVisible(visible: boolean): void {
+    this.assertAlive();
+    if (this.visible === visible) return;
+    this.visible = visible;
+    this.onChange();
+  }
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
   setData(data: readonly T[]): void {
     this.assertAlive();
+    for (const item of data) this.assertItem(item);
     assertSorted(data, "setData");
     this.items = [...data];
     this.onChange();
@@ -83,6 +114,7 @@ export class SeriesImpl<T extends { readonly time: number }> implements Series<T
 
   append(item: T): void {
     this.assertAlive();
+    this.assertItem(item);
     const last = this.items[this.items.length - 1];
     if (last !== undefined && item.time <= last.time) {
       throw new Error(
@@ -95,6 +127,7 @@ export class SeriesImpl<T extends { readonly time: number }> implements Series<T
 
   update(item: T): void {
     this.assertAlive();
+    this.assertItem(item);
     const lastIndex = this.items.length - 1;
     const last = this.items[lastIndex];
     if (last === undefined) throw new Error("update() called on an empty series");
@@ -109,6 +142,7 @@ export class SeriesImpl<T extends { readonly time: number }> implements Series<T
 
   updateMany(items: readonly T[]): void {
     this.assertAlive();
+    for (const item of items) this.assertItem(item);
     assertSortedAppend(this.items, items);
     this.items.push(...items);
     this.onChange();
@@ -124,6 +158,7 @@ export class SeriesImpl<T extends { readonly time: number }> implements Series<T
   remove(): void {
     if (this.removed) return;
     this.removed = true;
+    this.items = [];
     this.onRemove();
   }
 
@@ -137,6 +172,19 @@ export class SeriesImpl<T extends { readonly time: number }> implements Series<T
       else hi = mid;
     }
     return lo;
+  }
+
+  /** Item whose time is nearest to `t`, preferring an exact match. */
+  itemAt(t: number): T | undefined {
+    if (this.items.length === 0) return undefined;
+    let idx = this.lowerBound(t);
+    if (idx === this.items.length) idx = this.items.length - 1;
+    const exact = this.items[idx];
+    if (exact !== undefined && exact.time === t) return exact;
+    const prev = this.items[idx - 1];
+    if (exact === undefined) return prev;
+    if (prev === undefined) return exact;
+    return Math.abs(exact.time - t) <= Math.abs(prev.time - t) ? exact : prev;
   }
 
   /** Price range of items whose time is within [fromTime, toTime]. */
@@ -156,6 +204,28 @@ export class SeriesImpl<T extends { readonly time: number }> implements Series<T
 
   private assertAlive(): void {
     if (this.removed) throw new Error(`Series "${this.id}" has been removed`);
+  }
+
+  private assertItem(item: T): void {
+    if (!Number.isFinite(item.time)) {
+      throw new Error("item time must be a finite number");
+    }
+    if (this.type === "candles") {
+      const c = item as unknown as Candle;
+      if (
+        !Number.isFinite(c.open) ||
+        !Number.isFinite(c.high) ||
+        !Number.isFinite(c.low) ||
+        !Number.isFinite(c.close)
+      ) {
+        throw new Error("candle open/high/low/close must all be finite numbers");
+      }
+    } else {
+      const p = item as unknown as LineSeriesPoint;
+      if (!Number.isFinite(p.value)) {
+        throw new Error("line point value must be a finite number");
+      }
+    }
   }
 }
 

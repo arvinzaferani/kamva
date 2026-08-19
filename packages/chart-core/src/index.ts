@@ -12,11 +12,9 @@ export type {
   Size,
   Point,
 } from "./types.js";
-export { EventBus, type EventHandler } from "./event-bus.js";
-export { DataStore } from "./data-store.js";
-export { Camera } from "./camera.js";
+export { TimeScale } from "./timescale.js";
+export { PriceScale, type PriceScaleDeps } from "./price-scale.js";
 export {
-  SeriesImpl,
   type Series,
   type SeriesOptions,
   type CandlestickOptions,
@@ -32,8 +30,13 @@ export type {
   Plugin,
   ChartApi,
   ChartEvents,
+  ChartSubscriptions,
   CrosshairPosition,
+  CrosshairSeriesDatum,
   VisibleRangePayload,
   ClickPayload,
+  TimeScaleApi,
+  TimeRange,
+  PriceScaleApi,
 } from "./contracts.js";
 export { Chart, type ChartOptions } from "./chart.js";

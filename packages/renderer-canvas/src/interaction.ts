@@ -17,9 +17,8 @@ export class InteractionController {
   private lastY = 0;
   /** Active gesture: pan by default, or a chart-edge resize handle. */
   private mode: "pan" | "edgeH" | "edgeV" = "pan";
-  /** Fixed anchors captured at gesture start so resizing is jump-free. */
+  /** Fixed anchor captured at gesture start so resizing is jump-free. */
   private hAnchor = 0.5;
-  private vAnchorPrice: number | undefined;
   private readonly abort = new AbortController();
 
   /** Edge hit-zone thickness in CSS pixels. */
@@ -36,6 +35,7 @@ export class InteractionController {
     canvas.addEventListener("pointermove", this.onPointerMove, { signal });
     canvas.addEventListener("pointerup", this.onPointerUp, { signal });
     canvas.addEventListener("pointerleave", this.onPointerLeave, { signal });
+    canvas.addEventListener("dblclick", this.onDblClick, { signal });
   }
 
   destroy(): void {
@@ -67,9 +67,7 @@ export class InteractionController {
   private onPointerDown = (e: PointerEvent): void => {
     const rect = this.canvas.getBoundingClientRect();
     this.mode = this.edgeMode(rect, e.clientX, e.clientY);
-    const y = e.clientY - rect.top;
     this.hAnchor = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0.5;
-    this.vAnchorPrice = this.chart.viewport?.priceForY(y);
     this.dragging = true;
     this.moved = false;
     this.lastX = e.clientX;
@@ -102,15 +100,25 @@ export class InteractionController {
     }
     if (this.mode === "edgeV") {
       // Drag down => contract (zoom into price), drag up => expand.
-      // Keep the price under the cursor at gesture start fixed.
-      this.chart.zoomPrice(Math.exp(dy * 0.01), this.vAnchorPrice);
+      // Expand/contract from the middle of the price range (not the grab
+      // point) so the band feels balanced, and use a very gentle per-pixel
+      // factor so vertical expansion isn't sensitive.
+      this.chart.zoomPrice(Math.exp(dy * 0.002));
       return;
     }
 
     const viewport = this.chart.viewport;
     if (!viewport || viewport.candleWidth <= 0) return;
-    // Dragging right moves the view to older candles.
+    // Dragging right moves the view to older candles (horizontal pan).
     this.chart.pan(-dx / viewport.candleWidth);
+    // Dragging down moves the view to higher prices (vertical pan). The price
+    // scale takes manual control on the first vertical movement so the auto
+    // fit doesn't instantly fight the drag.
+    const range = this.chart.priceScale().getVisibleRange();
+    if (viewport.size.height > 0 && range.max > range.min) {
+      const pricePerPixel = (range.max - range.min) / viewport.size.height;
+      this.chart.panPrice(dy * pricePerPixel);
+    }
   };
 
   private onPointerUp = (e: PointerEvent): void => {
@@ -129,5 +137,10 @@ export class InteractionController {
     this.mode = "pan";
     this.renderer.setPointer(undefined);
     this.chart.emit("pointer:leave", undefined);
+  };
+
+  private onDblClick = (e: MouseEvent): void => {
+    const rect = this.canvas.getBoundingClientRect();
+    this.chart.emitDoubleClick(e.clientX - rect.left, e.clientY - rect.top);
   };
 }

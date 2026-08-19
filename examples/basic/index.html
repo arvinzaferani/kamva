@@ -143,9 +143,10 @@
       const chart = createChart(document.getElementById("chart"));
 
       // ---- main series (drives the render loop, camera & live feed) -------
-      // chart.setData seeds the primary candle series and fits the camera,
-      // which the current core requires (renderFrame bails on an empty
-      // main series and the camera defaults to a zero span otherwise).
+      // chart.setData seeds the "primary" candle series and fits the camera
+      // (see README §6 — a convenience shortcut targeting the first candle
+      // series). Indicator plugins read that primary series via chart.data,
+      // so it must be seeded before any plugin is attached.
 
       chart.setData(generateCandles(5000));
 
@@ -160,13 +161,13 @@
         "border-radius:8px;padding:8px 10px;pointer-events:none";
       hud.textContent = "Hover the chart";
       document.body.appendChild(hud);
-      chart.on("crosshairMove", ({ index, time }) => {
+      chart.subscribe("crosshairMove", ({ index, time }) => {
         const c = index >= 0 && index < chart.data.length ? chart.data[index] : undefined;
         hud.textContent = c
           ? `${new Date(time * 1000).toLocaleString()}  O ${c.open}  H ${c.high}  L ${c.low}  C ${c.close}`
           : "Hover the chart";
       });
-      chart.on("click", ({ time }) => {
+      chart.subscribe("click", ({ time }) => {
         hud.textContent = `Clicked bar at ${new Date(time * 1000).toLocaleString()}`;
       });
 

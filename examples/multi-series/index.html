@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KamvaChart — multi-series example</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #131722;
+        font: 13px -apple-system, system-ui, sans-serif;
+        color: #d1d4dc;
+      }
+      #chart {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      #hud {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: rgba(19, 23, 34, 0.9);
+        border: 1px solid #2a2e39;
+        font-variant-numeric: tabular-nums;
+        pointer-events: none;
+      }
+      #range {
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 6px 12px;
+        border-radius: 8px;
+        background: rgba(19, 23, 34, 0.9);
+        border: 1px solid #2a2e39;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        color: #9aa4b2;
+        pointer-events: none;
+      }
+      #controls {
+        position: fixed;
+        bottom: 12px;
+        left: 12px;
+        right: 12px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      #controls button {
+        cursor: pointer;
+        border: 1px solid #2a2e39;
+        border-radius: 6px;
+        background: rgba(41, 98, 255, 0.12);
+        color: #d1d4dc;
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+      #controls button:hover {
+        background: rgba(41, 98, 255, 0.25);
+      }
+      #hint {
+        position: fixed;
+        bottom: 56px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: #5d6570;
+        font-size: 11px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="chart"></canvas>
+    <div id="hud">Hover the chart</div>
+    <div id="range">visible —</div>
+    <div id="controls">
+      <button data-act="fitContent">Fit (timeScale.fitContent)</button>
+      <button data-act="reset">Reset (timeScale.reset)</button>
+      <button data-act="zoomIn">Zoom in</button>
+      <button data-act="zoomOut">Zoom out</button>
+      <button data-act="panL">‹</button>
+      <button data-act="panR">›</button>
+      <button data-act="live">⏸ Pause live feed</button>
+      <button data-act="hideSma">Hide SMA</button>
+      <button data-act="addLine">Add series</button>
+      <button data-act="removeSma">Remove SMA</button>
+      <button data-act="destroy">Destroy</button>
+    </div>
+    <div id="hint">Wheel: zoom · Drag: pan · Hover: crosshair · Bottom edge: time-resize · Right edge: price-resize</div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "@kamvachart/chart-core": "../../packages/chart-core/dist/index.js",
+          "@kamvachart/renderer-canvas": "../../packages/renderer-canvas/dist/index.js"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import { createChart } from "@kamvachart/renderer-canvas";
+
+      // ---- data helpers (standalone; no external mock package) ----
+      function randomWalk(count, startPrice = 100, intervalMs = 60_000) {
+        const out = [];
+        let price = startPrice;
+        let time = Date.now() - count * intervalMs;
+        for (let i = 0; i < count; i++) {
+          const move = (Math.random() - 0.5) * 4;
+          price = Math.max(1, price + move);
+          out.push({
+            time,
+            open: price - move * 0.5,
+            high: price + Math.random() + 0.5,
+            low: price - Math.random() - 0.5,
+            close: price,
+            volume: Math.round(500 + Math.random() * 1200),
+          });
+          time += intervalMs;
+        }
+        return out;
+      }
+      function smaOf(candles, period, count = 20) {
+        const out = [];
+        const n = Math.min(period, count);
+        for (let i = candles.length - n; i < candles.length; i++) {
+          if (i - period + 1 < 0) continue;
+          let s = 0;
+          for (let j = i - period + 1; j <= i; j++) s += candles[j].close;
+          out.push({ time: candles[i].time, value: s / period });
+        }
+        return out;
+      }
+
+      // ---- 1. Create the chart (wires a canvas + DOM interaction) ----
+      const chart = createChart(document.getElementById("chart"));
+
+      // ---- 2. Candlestick series (the shared x-axis / "primary") ----
+      const candles = chart.addCandlestickSeries({ color: "#2962ff" });
+      const seed = randomWalk(300);
+      candles.setData(seed);
+
+      // ---- 3. A line series on the same time axis ----
+      const sma = chart.addLineSeries({ color: "#ff9800", lineWidth: 2 });
+      sma.setData(smaOf(seed, 20));
+
+      // ---- 4. Crosshair: time, price, and per-series values ----
+      const hud = document.getElementById("hud");
+      chart.subscribe("crosshairMove", (pos) => {
+        if (!pos) {
+          hud.textContent = "Hover the chart";
+          return;
+        }
+        const c = pos.seriesData.find((d) => d.type === "candles");
+        const l = pos.seriesData.find((d) => d.type === "line");
+        hud.textContent =
+          new Date(pos.time * 1000).toLocaleTimeString() +
+          `  price ${pos.price.toFixed(2)}` +
+          (c ? `  close ${c.value.toFixed(2)}` : "") +
+          (l ? `  SMA ${l.value.toFixed(2)}` : "");
+      });
+      chart.subscribe("click", ({ time }) => {
+        hud.textContent = `Clicked bar at ${new Date(time * 1000).toLocaleTimeString()}`;
+      });
+
+      // ---- 5. Visible-range readout (also updates on pan/zoom/fit) ----
+      const rangeEl = document.getElementById("range");
+      const showRange = () => {
+        const r = chart.timeScale().getVisibleRange();
+        rangeEl.textContent = `visible  ${new Date(r.from).toLocaleTimeString()} → ${new Date(
+          r.to,
+        ).toLocaleTimeString()}`;
+      };
+      chart.subscribe("viewportChange", showRange);
+      showRange();
+
+      // ---- 6. Controls map to the real public API ----
+      let paused = false;
+      let nextTime = seed[seed.length - 1].time + 60_000;
+      const feed = window.setInterval(() => {
+        if (paused) return;
+        // Three ticks of the current bar, then push a new one.
+        const last = candles.getData()[candles.getData().length - 1];
+        if (Math.random() > 0.25) {
+          const tw = { ...last, close: last.close + (Math.random() - 0.5), high: Math.max(last.high, last.close + 0.5), low: Math.min(last.low, last.close - 0.5) };
+          candles.update(tw);
+          const s = candles.getData().slice(-20);
+          if (s.length === 20) sma.update({ time: tw.time, value: s.reduce((a, b) => a + b.close, 0) / 20 });
+        } else {
+          const price = last.close;
+          candles.append({
+            time: nextTime,
+            open: price,
+            high: price + 1,
+            low: price - 1,
+            close: price + (Math.random() - 0.5),
+          });
+          nextTime += 60_000;
+          sma.setData(smaOf(candles.getData(), 20, 20));
+        }
+      }, 400);
+
+      const buttons = {
+        fitContent: () => chart.timeScale().fitContent(),
+        reset: () => chart.timeScale().reset(),
+        zoomIn: () => chart.zoom(1.2, 0.5),
+        zoomOut: () => chart.zoom(1 / 1.2, 0.5),
+        panL: () => chart.pan(10),
+        panR: () => chart.pan(-10),
+        live: (btn) => {
+          paused = !paused;
+          btn.textContent = paused ? "▶ Resume live feed" : "⏸ Pause live feed";
+        },
+        hideSma: (btn) => {
+          const hidden = sma.isVisible();
+          sma.setVisible(!hidden);
+          btn.textContent = hidden ? "Show SMA" : "Hide SMA";
+        },
+        addLine: () => {
+          if (document.querySelector('[data-exists="extra"]')) return;
+          const extra = chart.addLineSeries({ color: "#26a69a", lineWidth: 1 });
+          extra.setData(smaOf(candles.getData(), 5).map((p) => ({ ...p, value: p.value * 1.02 })));
+          const b = document.createElement("button");
+          b.dataset.exists = "extra";
+          b.textContent = "Remove extra";
+          b.addEventListener("click", () => {
+            extra.remove(); // extra is removed and cleaned up from the core
+            b.remove();
+          });
+          document.getElementById("controls").appendChild(b);
+        },
+        removeSma: () => sma.remove(),
+        destroy: () => chart.destroy(),
+      };
+      document
+        .querySelectorAll("#controls button[data-act]")
+        .forEach((b) =>
+          b.addEventListener("click", () => {
+            const act = b.dataset.act;
+            if (act === "live" || act === "hideSma") buttons[act](b);
+            else buttons[act]();
+          }),
+        );
+
+      window.addEventListener("beforeunload", () => {
+        clearInterval(feed);
+        chart.destroy();
+      });
+    </script>
+  </body>
+</html>

@@ -2,20 +2,20 @@ import { Camera } from "./camera.js";
 import type {
   ChartApi,
   ChartEvents,
+  ChartSubscriptions,
+  ClickPayload,
   CrosshairPosition,
+  VisibleRangePayload,
   Plugin,
-  RenderableSeries,
   Renderer,
+  PriceScaleApi,
+  TimeScaleApi,
 } from "./contracts.js";
 import { EventBus } from "./event-bus.js";
-import {
-  createCandleSeries,
-  createLineSeries,
-  type LineOptions,
-  type Series,
-  type SeriesImpl,
-  type SeriesOptions,
-} from "./series.js";
+import { PriceScale } from "./price-scale.js";
+import { SeriesManager } from "./series-manager.js";
+import { TimeScale } from "./timescale.js";
+import type { LineOptions, Series, SeriesOptions } from "./series.js";
 import type { Candle, LineSeriesPoint, Point, PriceRange } from "./types.js";
 import { padPriceRange, Viewport } from "./viewport.js";
 
@@ -25,8 +25,6 @@ export interface ChartOptions {
   /** Candles of empty space allowed past either end when panning. Default 5. */
   overscroll?: number;
 }
-
-type AnySeries = SeriesImpl<Candle> | SeriesImpl<LineSeriesPoint>;
 
 /**
  * Chart is the facade over state (Series), navigation (Camera) and output
@@ -38,22 +36,26 @@ type AnySeries = SeriesImpl<Candle> | SeriesImpl<LineSeriesPoint>;
  * dependencies (see ARCHITECTURE.md). Drawing goes through the abstract
  * RenderSurface primitives, so any backend (Canvas today, WebGL later) can
  * render the same scene.
+ *
+ * Series live in a SeriesManager; the first candle series created becomes the
+ * primary (x-axis reference) and backs the convenience setData/append/update/
+ * data API, but it is not the only series the chart can hold.
  */
 export class Chart implements ChartApi {
   private readonly camera = new Camera();
   private readonly bus = new EventBus<ChartEvents>();
   private readonly plugins: Plugin[] = [];
   private readonly options: Required<ChartOptions>;
-  private readonly seriesList: AnySeries[] = [];
-  private readonly mainSeries: SeriesImpl<Candle>;
+  private readonly manager: SeriesManager;
+  private readonly timeScaleImpl: TimeScale;
+  private readonly priceScaleImpl: PriceScale;
   private renderer: Renderer | undefined;
   private currentViewport: Viewport | undefined;
-  /** User-adjusted vertical (price) range, or undefined for auto-fit. */
-  private manualPrice: PriceRange | undefined;
+  /** Cached auto price range, reused until data or the visible window change. */
+  private autoRangeCache: { version: number; from: number; to: number; range: PriceRange } | undefined;
   private dirty = false;
   private frameHandle: number | undefined;
   private destroyed = false;
-  private seriesCounter = 0;
   private readonly scheduleFrame: (cb: () => void) => number;
   private readonly cancelFrame: (handle: number) => void;
 
@@ -71,14 +73,32 @@ export class Chart implements ChartApi {
       this.scheduleFrame = (cb) => setTimeout(cb, 16) as unknown as number;
       this.cancelFrame = (h) => clearTimeout(h);
     }
-    // The primary candle series backs the convenience setData/append/update API.
-    this.mainSeries = createCandleSeries(
-      "candles",
-      {},
-      () => this.invalidate(),
-      () => this.removeSeriesInternal(this.mainSeries),
-    );
-    this.seriesList.push(this.mainSeries);
+    // Series live here; the primary (x-axis reference) is created lazily: the
+    // first candle series — whether added via addCandlestickSeries or via the
+    // setData shortcut — becomes the primary that backs the convenience API.
+    this.manager = new SeriesManager({
+      onChanged: () => {
+        // A freshly seeded reference series is invisible while the camera sits
+        // at its default zero span, so fit it the moment it first has data.
+        const primary = this.manager.primary();
+        if (primary !== undefined && primary.data.length > 0 && this.camera.span <= 0) {
+          this.camera.fit(primary.data.length, 200);
+        }
+        this.invalidate();
+      },
+      onRemoved: () => this.emitDataChanged(),
+    });
+    this.timeScaleImpl = new TimeScale({
+      camera: this.camera,
+      manager: this.manager,
+      notifyChange: () => this.emitCameraChanged(),
+      subscribeRaw: (cb) => this.on("visibleRangeChange", cb),
+    });
+    this.priceScaleImpl = new PriceScale({
+      getHeight: () => this.renderer?.size.height ?? 0,
+      getAutoRange: () => this.autoPriceRange(),
+      invalidate: () => this.invalidate(),
+    });
   }
 
   /** Attach the output renderer. The chart takes ownership and destroys it with itself. */
@@ -92,26 +112,14 @@ export class Chart implements ChartApi {
 
   addCandlestickSeries(options: SeriesOptions = {}): Series<Candle> {
     this.assertAlive();
-    const series = createCandleSeries(
-      `candles-${++this.seriesCounter}`,
-      options,
-      () => this.invalidate(),
-      () => this.removeSeriesInternal(series),
-    );
-    this.seriesList.push(series);
+    const series = this.manager.addCandlestick(options);
     this.invalidate();
     return series;
   }
 
   addLineSeries(options: LineOptions = {}): Series<LineSeriesPoint> {
     this.assertAlive();
-    const series = createLineSeries(
-      `line-${++this.seriesCounter}`,
-      options,
-      () => this.invalidate(),
-      () => this.removeSeriesInternal(series),
-    );
-    this.seriesList.push(series);
+    const series = this.manager.addLine(options);
     this.invalidate();
     return series;
   }
@@ -119,7 +127,7 @@ export class Chart implements ChartApi {
   // ---- data (convenience over the primary candle series) ----------------
 
   get data(): readonly Candle[] {
-    return this.mainSeries.data;
+    return this.manager.primary()?.data ?? [];
   }
 
   get viewport(): Viewport | undefined {
@@ -128,16 +136,21 @@ export class Chart implements ChartApi {
 
   setData(candles: readonly Candle[]): void {
     this.assertAlive();
+    // The convenience API targets the primary (x-axis reference). Create it if
+    // no candle series exists yet, so `new Chart(); chart.setData(...)` works.
+    if (this.manager.primary() === undefined) this.manager.addCandlestick({});
     this.camera.fit(candles.length, 200);
-    this.manualPrice = undefined;
-    this.mainSeries.setData(candles);
+    this.priceScaleImpl.autoscale();
+    this.manager.primary()?.setData(candles);
     this.emitDataChanged();
   }
 
   append(candle: Candle): void {
     this.assertAlive();
-    const wasAtEnd = this.camera.range.to >= this.mainSeries.data.length - 1;
-    this.mainSeries.append(candle);
+    const primary = this.manager.primary();
+    if (primary === undefined) return;
+    const wasAtEnd = this.camera.range.to >= primary.data.length - 1;
+    primary.append(candle);
     // Follow the live edge only if the user was already looking at it.
     if (wasAtEnd) this.camera.pan(1);
     this.emitDataChanged();
@@ -145,8 +158,13 @@ export class Chart implements ChartApi {
 
   update(candle: Candle): void {
     this.assertAlive();
-    this.mainSeries.update(candle);
+    this.manager.primary()?.update(candle);
     this.emitDataChanged();
+  }
+
+  removeSeries(id: string): void {
+    this.assertAlive();
+    this.manager.removeById(id);
   }
 
   // ---- navigation -------------------------------------------------------
@@ -154,41 +172,55 @@ export class Chart implements ChartApi {
   zoom(factor: number, anchor = 0.5): void {
     this.assertAlive();
     this.camera.zoom(factor, anchor);
-    this.camera.clampToData(this.mainSeries.data.length, this.options.overscroll);
+    this.camera.clampToData(this.manager.primaryLength(), this.options.overscroll);
     this.emitCameraChanged();
   }
 
   zoomPrice(factor: number, anchorPrice?: number): void {
     this.assertAlive();
     if (!Number.isFinite(factor) || factor <= 0) return;
-    // Anchor to the currently displayed price range (or the auto-fitted one),
-    // so zooming is anchored smoothly instead of jumping to a global center.
-    const base = this.manualPrice ?? this.currentViewport?.priceRange ?? this.autoPriceRange();
+    // Anchor to the currently displayed price range, so zooming is anchored
+    // smoothly instead of jumping to a global center.
+    const base = this.priceScaleImpl.effectiveRange();
     if (!base) return;
     const span = base.max - base.min;
     if (span <= 0) return;
     const anchor = anchorPrice === undefined ? (base.min + base.max) / 2 : Math.min(base.max, Math.max(base.min, anchorPrice));
     const frac = (anchor - base.min) / span;
     const target = span / factor;
-    this.manualPrice = {
+    this.priceScaleImpl.setVisibleRange({
       min: anchor - frac * target,
       max: anchor + (1 - frac) * target,
-    };
-    this.emitCameraChanged();
+    });
   }
 
   pan(candles: number): void {
     this.assertAlive();
     this.camera.pan(candles);
-    this.camera.clampToData(this.mainSeries.data.length, this.options.overscroll);
+    this.camera.clampToData(this.manager.primaryLength(), this.options.overscroll);
     this.emitCameraChanged();
+  }
+
+  /** Pan the vertical price axis by a price amount (takes manual control). */
+  panPrice(byPrice: number): void {
+    this.assertAlive();
+    this.priceScaleImpl.panPrice(byPrice);
   }
 
   fit(): void {
     this.assertAlive();
-    this.camera.fit(this.mainSeries.data.length);
-    this.manualPrice = undefined;
-    this.emitCameraChanged();
+    this.priceScaleImpl.autoscale();
+    this.timeScale().reset();
+  }
+
+  /** The shared time axis for all series. */
+  timeScale(): TimeScaleApi {
+    return this.timeScaleImpl;
+  }
+
+  /** The shared vertical (price) axis for all series on the default scale. */
+  priceScale(): PriceScaleApi {
+    return this.priceScaleImpl;
   }
 
   // ---- events -----------------------------------------------------------
@@ -200,7 +232,7 @@ export class Chart implements ChartApi {
     return this.bus.on(event, handler);
   }
 
-  /** Emit a raw pointer position; the chart resolves it into domain space. */
+  /** Raw pointer position; the chart resolves it into domain space. */
   emit<K extends keyof ChartEvents>(event: K, payload: ChartEvents[K]): void {
     this.bus.emit(event, payload);
     if (event === "pointer:move") {
@@ -216,8 +248,35 @@ export class Chart implements ChartApi {
   emitClick(x: number, y: number): void {
     const position = this.resolveCrosshair(x, y);
     if (position === undefined) return;
-    const { x: px, y: py, index, time, price } = position;
-    this.bus.emit("click", { x: px, y: py, index, time, price });
+    this.bus.emit("click", this.clickPayload(position));
+  }
+
+  /** Resolve a double click in pixel space into domain space and emit it. */
+  emitDoubleClick(x: number, y: number): void {
+    const position = this.resolveCrosshair(x, y);
+    if (position === undefined) return;
+    this.bus.emit("dblclick", this.clickPayload(position));
+  }
+
+  /** Subscribe to a user-facing event by name; returns an unsubscribe function. */
+  subscribe<E extends keyof ChartSubscriptions>(
+    event: E,
+    handler: (payload: ChartSubscriptions[E]) => void,
+  ): () => void {
+    switch (event) {
+      case "pointerMove":
+        return this.on("pointer:move", handler as (p: Point) => void);
+      case "click":
+        return this.on("click", handler as (p: ClickPayload) => void);
+      case "doubleClick":
+        return this.on("dblclick", handler as (p: ClickPayload) => void);
+      case "crosshairMove":
+        return this.on("crosshairMove", handler as (p: CrosshairPosition | undefined) => void);
+      case "viewportChange":
+        return this.on("visibleRangeChange", handler as (p: VisibleRangePayload) => void);
+      default:
+        throw new Error(`Unknown subscription: ${String(event)}`);
+    }
   }
 
   // ---- plugins ----------------------------------------------------------
@@ -252,7 +311,7 @@ export class Chart implements ChartApi {
     this.renderer?.destroy();
     this.renderer = undefined;
     this.bus.clear();
-    this.seriesList.length = 0;
+    this.manager.clear();
     this.destroyed = true;
   }
 
@@ -271,13 +330,14 @@ export class Chart implements ChartApi {
 
   /** Synchronous render, exposed for tests and manual frame control. */
   renderFrame(): void {
-    if (this.destroyed || !this.renderer || this.mainSeries.data.length === 0) return;
+    if (this.destroyed || !this.renderer || !this.manager.hasData()) return;
     const { from, to } = this.camera.range;
-    const rawRange = this.unionPriceRange(from, to);
-    if (!rawRange) return;
-    const priceRange = this.manualPrice
-      ? this.followPriceRange(rawRange, this.manualPrice)
-      : padPriceRange(rawRange, this.options.pricePadding);
+    // A manual price range is fully sticky: it is never re-fitted here. The
+    // auto path (no manual override) is handled by effectiveRange via the
+    // auto range cache, so the visible band either follows the user directly
+    // or auto-fits to the visible data — never a mix that can snap back.
+    const priceRange = this.priceScaleImpl.effectiveRange();
+    if (!priceRange) return;
     const viewport = new Viewport(
       this.renderer.size,
       { from, to },
@@ -285,7 +345,7 @@ export class Chart implements ChartApi {
     );
     this.currentViewport = viewport;
     for (const plugin of this.plugins) plugin.update?.(this);
-    const renderable = this.buildRenderable();
+    const renderable = this.manager.snapshot();
     this.renderer.beginFrame();
     // base layers (background, grid, axes, series)
     this.renderer.render(viewport, renderable);
@@ -298,31 +358,13 @@ export class Chart implements ChartApi {
 
   // ---- internals --------------------------------------------------------
 
-  private buildRenderable(): RenderableSeries[] {
-    return this.seriesList.map((s) => ({
-      id: s.id,
-      type: s.type,
-      options: s.options,
-      data: s.data as unknown as readonly Candle[] | readonly LineSeriesPoint[],
-    }));
-  }
-
   private unionPriceRange(from: number, to: number): PriceRange | undefined {
     const { fromTime, toTime } = this.visibleTimeWindow(from, to);
-    let min = Infinity;
-    let max = -Infinity;
-    for (const s of this.seriesList) {
-      const r = s.priceRange(fromTime, toTime);
-      if (r === undefined) continue;
-      if (r.min < min) min = r.min;
-      if (r.max > max) max = r.max;
-    }
-    if (min === Infinity) return undefined;
-    return { min, max };
+    return this.manager.unionPriceRange(fromTime, toTime);
   }
 
   private visibleTimeWindow(from: number, to: number): { fromTime: number; toTime: number } {
-    const data = this.mainSeries.data;
+    const data = this.manager.primary()?.data ?? [];
     if (data.length === 0) return { fromTime: 0, toTime: 0 };
     const lo = Math.max(0, Math.min(data.length - 1, Math.floor(from)));
     const hi = Math.max(0, Math.min(data.length - 1, Math.ceil(to)));
@@ -332,29 +374,32 @@ export class Chart implements ChartApi {
   /** The current auto-fitted (padded) price range over the visible data. */
   private autoPriceRange(): PriceRange | undefined {
     const { from, to } = this.camera.range;
+    const version = this.manager.dataVersion;
+    const cached = this.autoRangeCache;
+    // Reuse the last computed range unless the data or the visible window
+    // changed — avoids a full union pass on every crosshair read (Step 7).
+    if (
+      cached !== undefined &&
+      cached.version === version &&
+      Math.abs(cached.from - from) < 1e-9 &&
+      Math.abs(cached.to - to) < 1e-9
+    ) {
+      return cached.range;
+    }
     const raw = this.unionPriceRange(from, to);
-    if (!raw) return undefined;
-    return padPriceRange(raw, this.options.pricePadding);
-  }
-
-  /**
-   * Keep a user-zoomed vertical range but shift it up/down so the visible
-   * data stops popping out of the top or bottom while panning horizontally.
-   * The zoom span is preserved; when the data is wider than the span it
-   * follows the side being left instead of jumping back to a full auto range.
-   */
-  private followPriceRange(raw: PriceRange, manual: PriceRange): PriceRange {
-    const span = manual.max - manual.min;
-    let min = Math.min(manual.min, raw.min);
-    let max = Math.max(manual.max, raw.max);
-    if (max - min <= span) return { min, max };
-    if (raw.min < manual.min) return { min: raw.min, max: raw.min + span };
-    return { min: raw.max - span, max: raw.max };
+    if (!raw) {
+      this.autoRangeCache = undefined;
+      return undefined;
+    }
+    const range = padPriceRange(raw, this.options.pricePadding);
+    this.autoRangeCache = { version, from, to, range };
+    return range;
   }
 
   private emitDataChanged(): void {
-    this.camera.clampToData(this.mainSeries.data.length, this.options.overscroll);
-    this.bus.emit("data:changed", { size: this.mainSeries.data.length });
+    const size = this.manager.primaryLength();
+    this.camera.clampToData(size, this.options.overscroll);
+    this.bus.emit("data:changed", { size });
     this.invalidate();
   }
 
@@ -377,20 +422,25 @@ export class Chart implements ChartApi {
     const index = viewport.indexForX(x);
     const price = viewport.priceForY(y);
     const time = this.timeAtIndex(index);
-    return { x, y, index, price, time };
+    const seriesData = this.manager.crosshairAt(time);
+    return { x, y, index, price, time, seriesData };
+  }
+
+  private clickPayload(position: CrosshairPosition): ClickPayload {
+    return {
+      x: position.x,
+      y: position.y,
+      index: position.index,
+      time: position.time,
+      price: position.price,
+    };
   }
 
   private timeAtIndex(index: number): number {
-    const data = this.mainSeries.data;
+    const data = this.manager.primary()?.data ?? [];
     if (data.length === 0) return 0;
     const i = Math.max(0, Math.min(data.length - 1, Math.round(index)));
     return data[i]?.time ?? 0;
-  }
-
-  private removeSeriesInternal(series: AnySeries): void {
-    const index = this.seriesList.indexOf(series);
-    if (index >= 0) this.seriesList.splice(index, 1);
-    this.emitDataChanged();
   }
 
   private assertAlive(): void {
