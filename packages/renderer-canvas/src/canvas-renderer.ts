@@ -14,6 +14,7 @@ import {
   drawBackground,
   drawCandles,
   drawCrosshair,
+  drawCandleTooltip,
   drawGrid,
   drawLineSeries,
   type AxisFormatters,
@@ -23,6 +24,8 @@ import { darkTheme, type Theme } from "./theme.js";
 export interface CanvasRendererOptions {
   theme?: Theme;
   formatters?: AxisFormatters;
+  /** Draw an OHLCV tooltip next to the crosshair on hover. Default true. */
+  crosshairTooltip?: boolean;
 }
 
 /**
@@ -112,7 +115,7 @@ export class CanvasRenderer implements Renderer {
   }
 
   /** Top overlay, drawn after plugins so the crosshair always stays on top. */
-  drawOverlay(viewport: Viewport, _series: readonly RenderableSeries[]): void {
+  drawOverlay(viewport: Viewport, series: readonly RenderableSeries[]): void {
     if (!this.pointer) return;
     this.ctx.save();
     this.ctx.setTransform(this.devicePixelRatio(), 0, 0, this.devicePixelRatio(), 0, 0);
@@ -123,6 +126,12 @@ export class CanvasRenderer implements Renderer {
       this.theme,
       this.options.formatters ?? defaultFormatters,
     );
+    if (this.options.crosshairTooltip !== false) {
+      const candles = firstCandleSeries(series);
+      if (candles) {
+        drawCandleTooltip(this.ctx, viewport, this.pointer, candles.data as readonly Candle[], this.theme);
+      }
+    }
     this.ctx.restore();
   }
 

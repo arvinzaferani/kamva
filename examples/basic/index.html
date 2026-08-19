@@ -109,14 +109,15 @@
       </button>
       <div id="list"></div>
     </div>
-    <div id="hint">Wheel: zoom · Drag: pan · Hover: crosshair</div>
+    <div id="hint">Wheel: zoom · Drag: pan · Hover: tooltip · Bottom edge: H-resize · Right edge: V-resize</div>
 
     <script type="importmap">
       {
         "imports": {
           "@kamvachart/chart-core": "../../packages/chart-core/dist/index.js",
           "@kamvachart/renderer-canvas": "../../packages/renderer-canvas/dist/index.js",
-          "@kamvachart/indicators": "../../packages/indicators/dist/index.js"
+          "@kamvachart/indicators": "../../packages/indicators/dist/index.js",
+          "@kamvachart/mock-data": "../../examples/basic/mock-data.js"
         }
       }
     </script>
@@ -137,23 +138,16 @@
         computeRSI,
         computeMACD,
       } from "@kamvachart/indicators";
-      import { generateCandles, tickCandle, nextCandle } from "./mock-data.js";
+      import { generateCandles, tickCandle, nextCandle } from "@kamvachart/mock-data";
 
       const chart = createChart(document.getElementById("chart"));
 
-      // ---- new Series API: explicit candle series + a native line series ----
+      // ---- main series (drives the render loop, camera & live feed) -------
+      // chart.setData seeds the primary candle series and fits the camera,
+      // which the current core requires (renderFrame bails on an empty
+      // main series and the camera defaults to a zero span otherwise).
 
-      const candlesSeries = chart.addCandlestickSeries();
-      candlesSeries.setData(generateCandles(5000));
-
-      // A native line series (drawn by the renderer, no plugin needed).
-      const emaLine = chart.addLineSeries({ color: indicatorColors.blue, lineWidth: 2 });
-      const { data } = chart;
-      emaLine.setData(
-        data
-          .map((c, i) => ({ time: c.time, value: computeEMA(data, 50)[i] }))
-          .filter((p) => p.value !== undefined),
-      );
+      chart.setData(generateCandles(5000));
 
       // ---- crosshair HUD ---------------------------------------------------
 
@@ -167,7 +161,7 @@
       hud.textContent = "Hover the chart";
       document.body.appendChild(hud);
       chart.on("crosshairMove", ({ index, time }) => {
-        const c = index >= 0 && index < candlesSeries.data.length ? candlesSeries.data[index] : undefined;
+        const c = index >= 0 && index < chart.data.length ? chart.data[index] : undefined;
         hud.textContent = c
           ? `${new Date(time * 1000).toLocaleString()}  O ${c.open}  H ${c.high}  L ${c.low}  C ${c.close}`
           : "Hover the chart";

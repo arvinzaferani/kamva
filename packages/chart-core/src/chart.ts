@@ -48,6 +48,8 @@ export class Chart implements ChartApi {
   private readonly mainSeries: SeriesImpl<Candle>;
   private renderer: Renderer | undefined;
   private currentViewport: Viewport | undefined;
+  /** User-adjusted vertical (price) range, or undefined for auto-fit. */
+  private manualPrice: PriceRange | undefined;
   private dirty = false;
   private frameHandle: number | undefined;
   private destroyed = false;
@@ -127,6 +129,7 @@ export class Chart implements ChartApi {
   setData(candles: readonly Candle[]): void {
     this.assertAlive();
     this.camera.fit(candles.length, 200);
+    this.manualPrice = undefined;
     this.mainSeries.setData(candles);
     this.emitDataChanged();
   }
@@ -155,6 +158,25 @@ export class Chart implements ChartApi {
     this.emitCameraChanged();
   }
 
+  zoomPrice(factor: number, anchorPrice?: number): void {
+    this.assertAlive();
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    // Anchor to the currently displayed price range (or the auto-fitted one),
+    // so zooming is anchored smoothly instead of jumping to a global center.
+    const base = this.manualPrice ?? this.currentViewport?.priceRange ?? this.autoPriceRange();
+    if (!base) return;
+    const span = base.max - base.min;
+    if (span <= 0) return;
+    const anchor = anchorPrice === undefined ? (base.min + base.max) / 2 : Math.min(base.max, Math.max(base.min, anchorPrice));
+    const frac = (anchor - base.min) / span;
+    const target = span / factor;
+    this.manualPrice = {
+      min: anchor - frac * target,
+      max: anchor + (1 - frac) * target,
+    };
+    this.emitCameraChanged();
+  }
+
   pan(candles: number): void {
     this.assertAlive();
     this.camera.pan(candles);
@@ -165,6 +187,7 @@ export class Chart implements ChartApi {
   fit(): void {
     this.assertAlive();
     this.camera.fit(this.mainSeries.data.length);
+    this.manualPrice = undefined;
     this.emitCameraChanged();
   }
 
@@ -252,10 +275,13 @@ export class Chart implements ChartApi {
     const { from, to } = this.camera.range;
     const rawRange = this.unionPriceRange(from, to);
     if (!rawRange) return;
+    const priceRange = this.manualPrice
+      ? this.followPriceRange(rawRange, this.manualPrice)
+      : padPriceRange(rawRange, this.options.pricePadding);
     const viewport = new Viewport(
       this.renderer.size,
       { from, to },
-      padPriceRange(rawRange, this.options.pricePadding),
+      priceRange,
     );
     this.currentViewport = viewport;
     for (const plugin of this.plugins) plugin.update?.(this);
@@ -301,6 +327,29 @@ export class Chart implements ChartApi {
     const lo = Math.max(0, Math.min(data.length - 1, Math.floor(from)));
     const hi = Math.max(0, Math.min(data.length - 1, Math.ceil(to)));
     return { fromTime: data[lo]?.time ?? 0, toTime: data[hi]?.time ?? 0 };
+  }
+
+  /** The current auto-fitted (padded) price range over the visible data. */
+  private autoPriceRange(): PriceRange | undefined {
+    const { from, to } = this.camera.range;
+    const raw = this.unionPriceRange(from, to);
+    if (!raw) return undefined;
+    return padPriceRange(raw, this.options.pricePadding);
+  }
+
+  /**
+   * Keep a user-zoomed vertical range but shift it up/down so the visible
+   * data stops popping out of the top or bottom while panning horizontally.
+   * The zoom span is preserved; when the data is wider than the span it
+   * follows the side being left instead of jumping back to a full auto range.
+   */
+  private followPriceRange(raw: PriceRange, manual: PriceRange): PriceRange {
+    const span = manual.max - manual.min;
+    let min = Math.min(manual.min, raw.min);
+    let max = Math.max(manual.max, raw.max);
+    if (max - min <= span) return { min, max };
+    if (raw.min < manual.min) return { min: raw.min, max: raw.min + span };
+    return { min: raw.max - span, max: raw.max };
   }
 
   private emitDataChanged(): void {

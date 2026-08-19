@@ -153,6 +153,8 @@ export interface ChartApi {
   zoom(factor: number, anchor?: number): void;
   pan(candles: number): void;
   fit(): void;
+  /** Vertical zoom: factor > 1 zooms into the price axis, < 1 zooms out. Anchor 0=bottom,1=top. */
+  zoomPrice(factor: number, anchorY?: number): void;
   on<K extends keyof ChartEvents>(event: K, handler: (payload: ChartEvents[K]) => void): () => void;
   readonly data: readonly Candle[];
   readonly viewport: Viewport | undefined;

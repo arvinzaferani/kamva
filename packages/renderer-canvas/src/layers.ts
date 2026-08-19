@@ -180,6 +180,51 @@ export function drawCrosshair(
 
 // ---- helpers -------------------------------------------------------------
 
+/** An OHLCV info box for the candle under the crosshair, offset from the cursor. */
+export function drawCandleTooltip(
+  ctx: RenderSurface,
+  viewport: Viewport,
+  pointer: Point,
+  candles: readonly Candle[],
+  theme: Theme,
+): void {
+  const index = Math.round(viewport.indexForX(pointer.x));
+  const candle = candles[index];
+  if (candle === undefined) return;
+
+  const fmt = (v: number): string => (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(2));
+  const lines = [
+    `${new Date(candle.time * 1000).toLocaleString()}`,
+    `O ${fmt(candle.open)}  H ${fmt(candle.high)}`,
+    `L ${fmt(candle.low)}  C ${fmt(candle.close)}`,
+    `V ${fmt(candle.volume ?? 0)}`,
+  ];
+
+  ctx.font = theme.font;
+  const lineHeight = 14;
+  const padX = 8;
+  const padY = 6;
+  let boxW = 0;
+  for (const line of lines) boxW = Math.max(boxW, ctx.measureText(line).width);
+  boxW += padX * 2;
+  const boxH = lines.length * lineHeight + padY * 2;
+
+  // Place left/above the cursor, flipping when near the chart edges.
+  let x = pointer.x + 14;
+  let y = pointer.y - boxH - 14;
+  if (x + boxW > viewport.size.width) x = pointer.x - boxW - 14;
+  if (y < 0) y = pointer.y + 14;
+  x = Math.max(0, Math.min(x, viewport.size.width - boxW));
+  y = Math.max(0, Math.min(y, viewport.size.height - boxH));
+
+  ctx.fillStyle = theme.crosshairLabelBg;
+  ctx.fillRect(x, y, boxW, boxH);
+  ctx.fillStyle = theme.crosshairLabelText;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  lines.forEach((line, i) => ctx.fillText(line, x + padX, y + padY + i * lineHeight));
+}
+
 function visibleTimeWindow(
   candles: readonly Candle[],
   from: number,
