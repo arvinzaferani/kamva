@@ -1,239 +1,332 @@
 # KamvaChart
 
-Framework-agnostic, high-performance financial charting engine.
+<p align="center">
+  <strong>Framework-agnostic, high-performance financial charting engine for the web.</strong>
+</p>
 
-## 1. What Kamva is
+<p align="center">
+  <a href="https://www.npmjs.com/package/kamvachart">
+    <img src="https://img.shields.io/npm/v/kamvachart.svg" alt="npm version">
+  </a>
+  <a href="https://www.npmjs.com/package/kamvachart">
+    <img src="https://img.shields.io/npm/dm/kamvachart.svg" alt="npm downloads">
+  </a>
+  <a href="https://github.com/arvinzaferani/kamva/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/arvinzaferani/kamva.svg" alt="license">
+  </a>
+</p>
 
-A core charting engine (multi-series candlestick/line charts with crosshair,
-pan/zoom and realtime updates) plus small, focused packages that plug into it.
-The engine owns **state, the camera, the scales and the render scheduling** —
-not the DOM or a framework.
+---
 
-## 2. Why it is framework-agnostic
+## Overview
 
-- The engine core has **zero DOM / framework dependencies**. It is a plain
-  TypeScript state machine that emits events and accepts an injected renderer.
-- Rendering is a *separate* concern: the only code that touches a canvas or the
-  DOM lives in the renderer layer, by design.
-- Everything optional is a `Plugin` that sees only the public `ChartApi` — so
-  React/Vue/Svelte/Angular adapters can be added later without changing the
-  core (none exist yet; see [ROADMAP.md](./ROADMAP.md)).
+**KamvaChart** is a framework-agnostic financial charting engine designed for building interactive, high-performance charts in modern web applications.
 
-## 3. One package on npm
+It focuses on a clean separation between:
 
-`kamvachart` is a **single, self-contained npm package** — no scoped
-dependencies to install. The repo is a monorepo of three internal packages
-that are bundled together before publishing:
+- chart state and data management
+- viewport and camera logic
+- rendering
+- user interaction
+- technical indicators
+- extensibility through plugins
 
-| Internal package | Owns | Published as |
-| --- | --- | --- |
-| `@kamvachart/chart-core` | state (series), camera, time & price scales, viewport, events, plugins, render scheduling | bundled into `kamvachart` |
-| `@kamvachart/renderer-canvas` | Canvas 2D draw pipeline, layers, DOM interaction (wheel/drag/crosshair) | bundled into `kamvachart` |
-| `@kamvachart/indicators` | official indicators as plugins (SMA, EMA, RSI, MACD, VWAP, Bollinger, ATR, Ichimoku) | bundled into `kamvachart` |
+KamvaChart is built with TypeScript and is designed to work without being tied to React, Vue, Angular, or any other UI framework.
 
-The render pipeline is one-directional: data → viewport (`Chart.viewport`) →
-layers → canvas. Multiple series share **one time axis** (indexed by the first
-candle series) and **one price scale**. See [ARCHITECTURE.md](./ARCHITECTURE.md)
-and [RENDER_PIPELINE.md](./RENDER_PIPELINE.md).
+## Features
 
-## 4. Installation
+- 📈 Financial / market charting
+- ⚡ Canvas 2D rendering
+- 🎯 Framework-agnostic core
+- 🧩 Plugin-based architecture
+- 📊 Built-in technical indicators
+- 🔄 Real-time data updates
+- 🔍 Pan and zoom interactions
+- 📐 Independent viewport and camera management
+- 🧱 Modular internal architecture
+- 🪶 Zero runtime dependencies
+- 💪 TypeScript-first API
 
-```sh
+## Installation
+
+```bash
 npm install kamvachart
 ```
 
-Everything you need is exported from a single entry point:
+or:
 
-```ts
-import {
-  createChart,        // Chart wired to a canvas (wheel, drag, crosshair)
-  Chart,              // headless core, for ownership/custom renderers
-  CanvasRenderer,     // Canvas 2D output, attach to a Chart manually
-  sma, ema, rsi,      // indicator plugins
-} from "kamvachart";
+```bash
+pnpm add kamvachart
 ```
 
-### Developing the monorepo (contributors)
+or:
 
-```sh
-pnpm install
-pnpm build       # build all packages in dependency order
-pnpm test        # vitest
-pnpm typecheck
+```bash
+yarn add kamvachart
 ```
 
-Core rules: strict TypeScript, no `any`, no framework code in the engine, no
-circular dependencies (see [AGENT.md](./AGENT.md)).
-
-## 5. Quick start
+## Quick Start
 
 ```ts
 import { createChart } from "kamvachart";
 
-const chart = createChart(document.querySelector("canvas"));
+const container = document.getElementById("chart");
 
-const candles = chart.addCandlestickSeries();          // main series
-candles.setData(candlesData);                          // sorted by time
+if (!container) {
+  throw new Error("Chart container not found");
+}
 
-chart.zoom(2);   // wheel/edge-drag already work: zoom is anchored at cursor
-chart.pan(150);
-chart.fit();     // reset time + autoscale price
-
-chart.destroy();
-```
-
-`createChart(canvas)` wires a `Chart` to a canvas and adds wheel = zoom,
-drag = pan, hover = crosshair. The same `chart` object is the full [public API](#public-api).
-
-You can also construct the core alone and attach a renderer manually:
-
-```ts
-import { Chart, CanvasRenderer } from "kamvachart";
-
-const chart = new Chart();
-chart.attachRenderer(new CanvasRenderer(canvas));
-```
-
-## 6. Multiple series
-
-All series live on the same time axis and price scale:
-
-```ts
-const candles = chart.addCandlestickSeries({ color: "#2962ff" });
-candles.setData(candlesData);                     // Candle[]
-
-const sma = chart.addLineSeries({ color: "#ff9800", lineWidth: 2 });
-sma.setData(emaPoints);                           // { time, value }[]
-```
-
-Series are independent: update one without touching the others. Hide or remove
-any time:
-
-```ts
-candles.setVisible(false);   // not rendered, not autoscaled, not on the crosshair
-chart.removeSeries(candles.id);
-// or: candles.remove();
-```
-
-`chart.setData(candles)` is a shortcut that targets the first candle series
-("primary") for convenience.
-
-## 7. Realtime updates
-
-Efficient single-point updates, coalesced into one render per animation
-frame:
-
-```ts
-candles.update(tick);    // same time as last bar  -> replaces the last bar
-candles.append(nextBar); // greater time           -> appends a new bar
-candles.updateMany(more); // batch append
-```
-
-A burst of `update()`/`append()` calls in one event loop draws **one** frame,
-and only the touched series' state is invalidated (unrelated series are
-untouched).
-
-## 8. Plugins
-
-Anything optional is a plugin doing the same boundaries as indicators:
-
-```ts
-chart.use({
-  name: "my-tool",
-  initialize(chart) { /* subscribe via chart.subscribe(...) */ },
-  update(chart)      { /* recompute on data/camera change, before draw */ },
-  draw(chart, viewport, surface) {
-    // overlay via the abstract RenderSurface
-    surface.strokeStyle = "#fff";
-    surface.beginPath();
-    surface.moveTo(0, viewport.yForPrice(100));
-    surface.lineTo(viewport.size.width, viewport.yForPrice(100));
-    surface.stroke();
-  },
-  destroy() {},
+const chart = createChart(container, {
+  // chart configuration
 });
-chart.removePlugin("my-tool");
 ```
 
-See [PLUGIN_SYSTEM.md](./PLUGIN_SYSTEM.md). Plugins see only `ChartApi` and a
-DOM-free `RenderSurface`.
+KamvaChart is framework-agnostic, so the same API can be used from React, Vue, Svelte, vanilla JavaScript, or any other web application.
 
-## 9. Indicators currently available
+## Indicators
 
-`kamvachart` ships indicator plugins: **SMA, EMA, RSI, MACD, VWAP, Bollinger
-Bands, ATR, Ichimoku**.
+KamvaChart v1 includes a collection of commonly used technical indicators:
 
 ```ts
-import { sma, ema, rsi, macd, bollingerBands, vwap, atr, ichimoku } from "kamvachart";
-chart.use(sma({ period: 20 }));
-chart.use(ema({ period: 50 }));
-chart.use(rsi({ period: 14 }));
-chart.use(macd({ fast: 12, slow: 26, signal: 9 }));
+import {
+  sma,
+  ema,
+  rsi,
+  macd,
+  bollingerBands,
+  vwap,
+  atr,
+  ichimoku,
+} from "kamvachart";
 ```
 
-Pure computation functions (`computeSMA`, `computeRSI`, …) are exported too,
-for backtests and headless use.
+Available indicators:
 
-## 10. Current limitations
+| Indicator | Description |
+| --- | --- |
+| `sma` | Simple Moving Average |
+| `ema` | Exponential Moving Average |
+| `rsi` | Relative Strength Index |
+| `macd` | Moving Average Convergence Divergence |
+| `bollingerBands` | Bollinger Bands |
+| `vwap` | Volume Weighted Average Price |
+| `atr` | Average True Range |
+| `ichimoku` | Ichimoku Cloud |
 
-- **Series types:** candles and line only — no histogram/volume series yet.
-- **Frameworks:** no React/Vue/Svelte/Angular adapters exist yet.
-- **Price scales:** a single shared price scale (multi-scale is designed for but
-  not implemented).
-- **Panes:** oscillators (RSI, MACD) draw into a bottom band until multi-pane
-  support lands.
-- **Touch:** pointer-based pan/click work; pinch zoom is not implemented.
+Indicator implementations are exposed through the same public package, so consumers don't need to install additional KamvaChart packages.
 
-## 11. Roadmap
+## Architecture
 
-See [ROADMAP.md](./ROADMAP.md). High level: more series/renderer backends
-(WebGL), framework adapters, multiple panes & price scales, drawing tools,
-and themes.
+KamvaChart is internally organized into several modules:
+
+```text
+kamvachart
+│
+├── Chart Core
+│   ├── chart state
+│   ├── data store
+│   ├── viewport
+│   ├── camera
+│   ├── time scale
+│   ├── price scale
+│   ├── series management
+│   └── event system
+│
+├── Canvas Renderer
+│   ├── rendering pipeline
+│   ├── layers
+│   ├── canvas rendering
+│   └── DOM interaction
+│
+└── Indicators
+    ├── SMA
+    ├── EMA
+    ├── RSI
+    ├── MACD
+    ├── Bollinger Bands
+    ├── VWAP
+    ├── ATR
+    └── Ichimoku
+```
+
+These modules remain separated internally, while the published package provides a single developer-facing API:
+
+```ts
+import { ... } from "kamvachart";
+```
+
+This keeps the internal architecture modular without forcing consumers to manage multiple packages.
+
+## Design Principles
+
+KamvaChart is built around a few core principles:
+
+### Framework agnostic
+
+The chart engine does not depend on a UI framework.
+
+### Separation of concerns
+
+Chart state, rendering, interaction, and indicators are kept independent.
+
+### Extensibility
+
+The architecture is designed around plugins and composable chart functionality.
+
+### Performance
+
+Rendering and viewport operations are designed with interactive financial charts in mind.
+
+### Type safety
+
+The public API is written in TypeScript and ships with generated type declarations.
+
+## Project Structure
+
+```text
+kamva/
+├── packages/
+│   ├── chart-core/
+│   ├── renderer-canvas/
+│   ├── indicators/
+│   └── kamvachart/
+│
+├── examples/
+├── README.md
+├── ARCHITECTURE.md
+├── DESIGN_PRINCIPLES.md
+├── PERFORMANCE.md
+├── PLUGIN_SYSTEM.md
+└── ROADMAP.md
+```
+
+### Internal packages
+
+| Package | Responsibility |
+| --- | --- |
+| `chart-core` | Chart state, data, viewport, camera, scales and events |
+| `renderer-canvas` | Canvas rendering and browser interaction |
+| `indicators` | Technical indicators and indicator plugins |
+| `kamvachart` | Public package and unified API |
+
+Only `kamvachart` is intended as the primary consumer-facing package.
+
+## Development
+
+Clone the repository:
+
+```bash
+git clone https://github.com/arvinzaferani/kamva.git
+cd kamva
+```
+
+Install dependencies:
+
+```bash
+pnpm install
+```
+
+Build all packages:
+
+```bash
+pnpm build
+```
+
+Run type checking:
+
+```bash
+pnpm typecheck
+```
+
+Run tests:
+
+```bash
+pnpm test
+```
+
+## Examples
+
+Example applications are available in:
+
+```text
+examples/
+├── basic/
+└── multi-series/
+```
+
+They demonstrate how KamvaChart can be integrated into a browser application.
+
+## Documentation
+
+More detailed technical documentation is available in the repository:
+
+- [Architecture](./ARCHITECTURE.md)
+- [Design Principles](./DESIGN_PRINCIPLES.md)
+- [Performance](./PERFORMANCE.md)
+- [Plugin System](./PLUGIN_SYSTEM.md)
+- [API Guide](./API_GUID.md)
+- [Render Pipeline](./RENDER_PIPELINE.md)
+- [Product Plan](./KamvaCharts_Product_Plan.md)
+- [Roadmap](./ROADMAP.md)
+
+## Browser Support
+
+KamvaChart is designed primarily for modern browsers supporting:
+
+- ES2022 JavaScript
+- HTML Canvas 2D
+- Modern DOM APIs
+
+## Status
+
+### v1.0.0
+
+KamvaChart v1 establishes the first public package API and provides:
+
+- unified `kamvachart` package
+- Canvas 2D renderer
+- framework-agnostic chart core
+- plugin-oriented architecture
+- built-in technical indicators
+- TypeScript declarations
+- zero runtime dependencies
+
+The API is intended to provide a stable foundation for future releases.
+
+## Roadmap
+
+Planned areas of development include:
+
+- additional chart types
+- additional technical indicators
+- improved rendering performance
+- richer plugin APIs
+- advanced financial drawing tools
+- improved interaction and accessibility
+- additional examples and documentation
+
+See [ROADMAP.md](./ROADMAP.md) for the current development plan.
+
+## Contributing
+
+Contributions, bug reports, feature requests, and discussions are welcome.
+
+Before opening a pull request, please make sure:
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+all pass successfully.
+
+## License
+
+KamvaChart is released under the [MIT License](./LICENSE).
 
 ---
 
-## Public API
-
-**Events / interaction** (all payloads are domain-space, never raw pixels):
-
-```ts
-chart.subscribe("pointerMove",   ({ x, y }) => {});
-chart.subscribe("click",         ({ time, price }) => {});
-chart.subscribe("doubleClick",   ({ time }) => {});
-chart.subscribe("crosshairMove", (pos) => {
-  if (!pos) return;                       // pointer left the chart
-  const { time, price, seriesData } = pos;
-  for (const d of seriesData) console.log(d.id, d.type, d.value);
-});
-chart.subscribe("viewportChange", ({ fromTime, toTime }) => {});
-// subscribe(...) returns an unsubscribe function.
-```
-
-**Scales:**
-
-```ts
-chart.timeScale().fitContent();                       // fit all visible series
-chart.timeScale().reset();                            // fit to the primary
-chart.timeScale().setVisibleRange({ from, to });      // in ms
-const range = chart.timeScale().getVisibleRange();
-
-chart.priceScale().setVisibleRange({ min, max });
-chart.priceScale().getVisibleRange();
-chart.priceScale().panPrice(priceUnits);           // shift the price axis vertically
-chart.priceScale().valueToCoordinate(price);          // price -> pixel y
-chart.priceScale().coordinateToValue(y);              // pixel y -> price
-```
-
-**Navigation:** `chart.zoom(factor, anchor?)`, `chart.pan(candles)`,
-`chart.panPrice(priceUnits)`, `chart.zoomPrice(factor)`, `chart.fit()`.
-Middle-drag pans both axes: horizontal via `pan`, vertical via `panPrice`
-(the price scale takes manual control on the first vertical movement).
-
-## Run the examples
-
-```sh
-pnpm install
-pnpm build
-npx serve .   # then open /examples/basic/   (indicators + live feed)
-              #         or /examples/multi-series/ (focused multi-series demo)
-```
+<p align="center">
+  Built with TypeScript and Canvas.
+</p>
