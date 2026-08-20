@@ -2,6 +2,7 @@
   "name": "kamvachart",
   "version": "1.0.0",
   "description": "Framework-agnostic, high-performance financial charting library.",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,6 +16,33 @@
     "dist"
   ],
   "sideEffects": false,
+  "keywords": [
+    "chart",
+    "charting",
+    "candlestick",
+    "candlestick-chart",
+    "trading",
+    "financial",
+    "stock",
+    "technical-analysis",
+    "canvas",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arvinzaferani/kamva.git"
+  },
+  "homepage": "https://github.com/arvinzaferani/kamva",
+  "bugs": {
+    "url": "https://github.com/arvinzaferani/kamva/issues"
+  },
+  "author": {
+    "name": "Arvin Zaferani",
+    "url": "https://github.com/arvinzaferani"
+  },
   "scripts": {
     "build": "tsup && rollup -c rollup.dts.config.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
