@@ -33,12 +33,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The demo imports `kamvachart`, whose dist is produced by the facade build.
-      - name: Build kamvachart
-        run: pnpm --filter ./packages/kamvachart build
-
-      - name: Build playground demo
-        run: pnpm --filter ./examples/playground build
+      # Builds in dependency order (chart-core, renderer-canvas, indicators,
+      # then the kamvachart facade which bundles them from dist, then the
+      # playground which imports `kamvachart`).
+      - name: Build packages and playground
+        run: pnpm build
 
       - name: Upload static site (Pages artifact)
         uses: actions/upload-pages-artifact@v3
