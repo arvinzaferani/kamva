@@ -14,7 +14,20 @@
   <a href="https://github.com/arvinzaferani/kamva/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/arvinzaferani/kamva.svg" alt="license">
   </a>
+  <a href="https://arvinzaferani.github.io/kamva/">
+    <img src="https://img.shields.io/badge/demo-live-brightgreen.svg" alt="live demo">
+  </a>
 </p>
+
+---
+
+## Live Demo
+
+**[Open the interactive playground](https://arvinzaferani.github.io/kamva/)** — a real,
+browser-based KamvaChart demo with pan, zoom, crosshair, live indicator toggles and a
+simulated realtime feed. It is a static Vite build (no backend) served from GitHub Pages.
+
+![KamvaChart playground](docs/preview.png)
 
 ---
 
@@ -251,15 +264,21 @@ Example applications are available in:
 ```text
 examples/
 ├── basic/
-└── multi-series/
+├── multi-series/
+└── playground/
 ```
 
-They demonstrate how KamvaChart can be integrated into a browser application.
+`basic` and `multi-series` demonstrate basic server-rendered integrations. The
+`playground/` directory is the source of the [live demo](https://arvinzaferani.github.io/kamva/)
+and is deployed to GitHub Pages on every push to `main`.
 
 ## Documentation
 
 More detailed technical documentation is available in the repository:
 
+- [kamvachart — Getting started](./packages/kamvachart/docs/getting-started.md)
+- [kamvachart — API reference](./packages/kamvachart/docs/api.md)
+- [kamvachart — Indicators](./packages/kamvachart/docs/indicators.md)
 - [Architecture](./ARCHITECTURE.md)
 - [Design Principles](./DESIGN_PRINCIPLES.md)
 - [Performance](./PERFORMANCE.md)

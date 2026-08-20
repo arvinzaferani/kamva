@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>KamvaChart — Interactive Playground</title>
+    <link rel="icon" type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧶</text></svg>" />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="logo">🧶</span>
+          <span class="word">Kamva</span>
+          <span class="ver">v1.0.0</span>
+        </div>
+        <nav class="links">
+          <a href="./docs.html">Docs</a>
+          <a href="https://arvinzaferani.github.io/kamva/" target="_blank" rel="noopener">Demo</a>
+          <a href="https://github.com/arvinzaferani/kamva" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://www.npmjs.com/package/kamvachart" target="_blank" rel="noopener">npm</a>
+        </nav>
+      </header>
+
+      <section class="quote">
+        <div class="symbol" id="symbol">BTC / USD</div>
+        <div class="price" id="price">&mdash;</div>
+        <div class="change" id="change">&mdash;</div>
+        <div class="ohlc" id="ohlc">O &mdash; H &mdash; L &mdash; C &mdash;</div>
+      </section>
+
+      <main class="stage">
+        <canvas id="chart"></canvas>
+        <div class="viewbar">
+          <button id="zoom-out" title="Zoom out">–</button>
+          <button id="zoom-in" title="Zoom in">+</button>
+          <button id="fit" title="Fit all">⤓</button>
+        </div>
+      </main>
+
+      <aside class="legend" id="legend"></aside>
+
+      <footer class="controls">
+        <section class="group">
+          <h3>Indicators</h3>
+          <div class="chips" id="indicators"></div>
+        </section>
+        <section class="group">
+          <h3>Timeframe</h3>
+          <div class="chips" id="timeframes"></div>
+        </section>
+        <section class="group">
+          <h3>Data</h3>
+          <div class="chips" id="symbols"></div>
+        </section>
+        <section class="group">
+          <h3>Realtime</h3>
+          <label class="switch-row">
+            <span>Live feed</span>
+            <input type="checkbox" id="realtime" />
+            <span class="toggle"></span>
+          </label>
+        </section>
+      </footer>
+
+      <p class="hint">Wheel: zoom · Drag: pan · Hover: crosshair · Right edge: V-resize · Bottom edge: H-resize</p>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

@@ -2,6 +2,17 @@
 
 Framework-agnostic, high-performance financial charting engine.
 
+## Documentation
+
+| Guide | |
+| --- | --- |
+| [Getting started](./docs/getting-started.md) | Install, first chart, data, realtime, events |
+| [API reference](./docs/api.md) | Every export: `createChart`, `Chart`, series, scales, types |
+| [Indicators](./docs/indicators.md) | Indicator factories, options, and pure `compute*` functions |
+| [Concepts](./docs/concepts.md) | Data model, primary series, coordinates, zoom & pan semantics |
+| [Interaction & styling](./docs/interaction.md) | Gestures, theming, axis formatters, tooltips |
+| [Extending](./docs/extending.md) | Writing your own plugins |
+
 ## 1. What Kamva is
 
 A core charting engine (multi-series candlestick/line charts with crosshair,
